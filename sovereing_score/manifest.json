@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "locale": "English_United States.1252",
+  "metadata": {
+    "appmode": "python-streamlit",
+    "entrypoint": "app.py"
+  },
+  "python": {
+    "version": "3.12.2",
+    "package_manager": {
+      "name": "pip",
+      "version": "24.0",
+      "package_file": "requirements.txt"
+    }
+  },
+  "environment": {
+    "python": {
+      "requires": "~=3.12.0"
+    }
+  },
+  "files": {
+    "requirements.txt": {
+      "checksum": "24a852ed3ee38020c2b02eedaec5c810"
+    },
+    ".python-version": {
+      "checksum": "0f1b2675960c650f3eecb70c9f55f929"
+    },
+    "app.py": {
+      "checksum": "f43dc3831777d34981f72aefc2091c44"
+    },
+    "create_bundle.ps1": {
+      "checksum": "9bbfc2bc4cb5240bc95a062b1b98b0a0"
+    },
+    "deploy.ps1": {
+      "checksum": "281ab4bd53781eb3964c0ecb75ac4796"
+    },
+    "deploy_git.ps1": {
+      "checksum": "de895a2d87e1f354728e4cf47541eb36"
+    },
+    "deploy_manifest.ps1": {
+      "checksum": "0981be6895f424b7fda71f4314b3f731"
+    },
+    "input/mimLogo.svg": {
+      "checksum": "b9a49a5b51cfe58728aa908ce8ff268b"
+    },
+    "input/s_scores.xlsx": {
+      "checksum": "38cfc52ace9483f3a1856ed9d48f66ec"
+    },
+    "score_viz.py": {
+      "checksum": "0ab72a0323745170102e7645b8f27568"
+    },
+    "sovereign_spread_scatter.png": {
+      "checksum": "f53febb59c9322f94f14c76bd86c714e"
+    }
+  }
+}
