@@ -207,6 +207,97 @@ with col2:
 with col3:
     st.metric("Spread Range", f"{df_filtered['z_spread'].min():.0f} - {df_filtered['z_spread'].max():.0f} bps")
 
+# Function to calculate optimal text positions to avoid overlap
+def get_text_positions(df_data, all_points_x, all_points_y):
+    """
+    Dynamically assign text positions based on point density and proximity to ALL points.
+    Returns array of position strings for each point.
+    
+    Args:
+        df_data: DataFrame subset for this group
+        all_points_x: All x-coordinates in the entire filtered dataset
+        all_points_y: All y-coordinates in the entire filtered dataset
+    """
+    if len(df_data) == 0:
+        return []
+    
+    # Position options with their relative offsets (for scoring)
+    # Format: (position_name, x_offset, y_offset) where offsets indicate direction
+    position_options = [
+        ('top center', 0, 1),
+        ('bottom center', 0, -1),
+        ('middle right', 1, 0),
+        ('middle left', -1, 0),
+        ('top right', 0.7, 0.7),
+        ('top left', -0.7, 0.7),
+        ('bottom right', 0.7, -0.7),
+        ('bottom left', -0.7, -0.7)
+    ]
+    
+    # Get coordinates for this group
+    x_vals = df_data['sp_num_score'].values
+    y_vals = df_data['z_spread'].values
+    
+    if len(x_vals) == 0:
+        return []
+    
+    # Normalize all coordinates (global normalization)
+    x_range = all_points_x.max() - all_points_x.min() if all_points_x.max() != all_points_x.min() else 1
+    y_range = all_points_y.max() - all_points_y.min() if all_points_y.max() != all_points_y.min() else 1
+    
+    all_x_norm = (all_points_x - all_points_x.min()) / x_range if x_range > 0 else all_points_x
+    all_y_norm = (all_points_y - all_points_y.min()) / y_range if y_range > 0 else all_points_y
+    
+    x_norm = (x_vals - all_points_x.min()) / x_range if x_range > 0 else x_vals
+    y_norm = (y_vals - all_points_y.min()) / y_range if y_range > 0 else y_vals
+    
+    positions = []
+    
+    # For each point in this group, find the best position
+    for i in range(len(df_data)):
+        current_x = x_norm[i]
+        current_y = y_norm[i]
+        
+        # Calculate distances to ALL points in the plot
+        distances = np.sqrt((all_x_norm - current_x)**2 + (all_y_norm - current_y)**2)
+        
+        # Score each position based on how well it avoids other points
+        best_position = 'top center'
+        best_score = -float('inf')
+        
+        for pos_name, x_offset, y_offset in position_options:
+            # Calculate where the label would be placed (approximate offset in normalized space)
+            label_offset = 0.03  # Approximate label offset distance
+            label_x = current_x + x_offset * label_offset
+            label_y = current_y + y_offset * label_offset
+            
+            # Calculate distances from label position to all points
+            label_distances = np.sqrt((all_x_norm - label_x)**2 + (all_y_norm - label_y)**2)
+            
+            # Score: minimum distance to any point (we want to maximize this)
+            # Also consider average distance to nearby points
+            min_distance = label_distances.min()
+            nearby_mask = distances < 0.12  # Points near the current point
+            avg_nearby_distance = label_distances[nearby_mask].mean() if nearby_mask.sum() > 0 else 1.0
+            
+            # Combined score: prioritize not being too close to any point
+            score = min_distance * 2 + avg_nearby_distance
+            
+            # Special handling for vertically stacked points (same x, close y)
+            vertical_stack_mask = (np.abs(all_x_norm - current_x) < 0.02) & (distances > 0) & (distances < 0.15)
+            if vertical_stack_mask.sum() > 0:
+                # For stacked points, prefer horizontal positions
+                if 'left' in pos_name or 'right' in pos_name:
+                    score *= 1.5
+            
+            if score > best_score:
+                best_score = score
+                best_position = pos_name
+        
+        positions.append(best_position)
+    
+    return positions
+
 # Create scatter plot
 fig = go.Figure()
 
@@ -218,12 +309,19 @@ symbol_map = {'LatAM': 'circle', 'EMEA': 'square', 'Asia': 'triangle-up'}
 df_regular = df_filtered[~df_filtered['is_outlier']]
 df_outliers = df_filtered[df_filtered['is_outlier']]
 
+# Get all point coordinates for global awareness in label positioning
+all_points_x = df_filtered['sp_num_score'].values
+all_points_y = df_filtered['z_spread'].values
+
 # Add scatter points by group - Regular countries (IG and HY)
 for class_type in ['IG', 'HY']:
     for region in ['LatAM', 'EMEA', 'Asia']:
         data = df_regular[(df_regular['class'] == class_type) & (df_regular['region'] == region)]
         
         if len(data) > 0:
+            # Get dynamic text positions with global point awareness
+            text_positions = get_text_positions(data, all_points_x, all_points_y)
+            
             fig.add_trace(go.Scatter(
                 x=data['sp_num_score'],
                 y=data['z_spread'],
@@ -236,7 +334,7 @@ for class_type in ['IG', 'HY']:
                     line=dict(width=1, color='black')
                 ),
                 text=data['country_code'],
-                textposition='top center',
+                textposition=text_positions,
                 textfont=dict(size=8),
                 customdata=np.column_stack((
                     data['country'],
@@ -263,6 +361,9 @@ if show_outliers and len(df_outliers) > 0:
         data = df_outliers[df_outliers['region'] == region]
         
         if len(data) > 0:
+            # Get dynamic text positions for outliers with global point awareness
+            text_positions = get_text_positions(data, all_points_x, all_points_y)
+            
             fig.add_trace(go.Scatter(
                 x=data['sp_num_score'],
                 y=data['z_spread'],
@@ -275,7 +376,7 @@ if show_outliers and len(df_outliers) > 0:
                     line=dict(width=1, color='black')
                 ),
                 text=data['country_code'],
-                textposition='top center',
+                textposition=text_positions,
                 textfont=dict(size=8),
                 customdata=np.column_stack((
                     data['country'],
