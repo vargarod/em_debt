@@ -33,23 +33,29 @@ def load_data():
     df = pd.read_excel(file_path, sheet_name="ratings_clean")
     map_df = pd.read_excel(file_path, sheet_name="rating_num_score")
     
-    # Regional mapping
+    # Regional mapping - using actual country codes from Excel file
     region_mapping = {
-        'ARG': 'LatAM', 'BRA': 'LatAM', 'CHL': 'LatAM', 'COL': 'LatAM', 'MEX': 'LatAM',
-        'PER': 'LatAM', 'URY': 'LatAM', 'ECU': 'LatAM', 'PAN': 'LatAM', 'CRI': 'LatAM',
-        'GTM': 'LatAM', 'DOM': 'LatAM', 'PRY': 'LatAM', 'SLV': 'LatAM', 'VEN': 'LatAM',
-        'BOL': 'LatAM', 'JAM': 'LatAM', 'TTO': 'LatAM',
-        'ZAF': 'EMEA', 'TUR': 'EMEA', 'POL': 'EMEA', 'HUN': 'EMEA', 'ROU': 'EMEA',
-        'CZE': 'EMEA', 'HRV': 'EMEA', 'BGR': 'EMEA', 'EGY': 'EMEA', 'MAR': 'EMEA',
-        'KEN': 'EMEA', 'NGA': 'EMEA', 'SEN': 'EMEA', 'KSA': 'EMEA', 'UAE': 'EMEA',
-        'QAT': 'EMEA', 'BHR': 'EMEA', 'OMN': 'EMEA', 'JOR': 'EMEA', 'LBN': 'EMEA',
-        'ISR': 'EMEA', 'RUS': 'EMEA', 'UKR': 'EMEA', 'KAZ': 'EMEA', 'SRB': 'EMEA',
-        'GHA': 'EMEA', 'CIV': 'EMEA', 'AGO': 'EMEA', 'ETH': 'EMEA', 'TUN': 'EMEA',
-        'LEB': 'EMEA', 'GAB': 'EMEA', 'AZE': 'EMEA', 'MOZ': 'EMEA',
-        'CHI': 'Asia', 'IND': 'Asia', 'IDN': 'Asia', 'THA': 'Asia', 'MYS': 'Asia',
-        'PHL': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'LKA': 'Asia',
+        # LatAM
+        'ARG': 'LatAM', 'BRZ': 'LatAM', 'CHL': 'LatAM', 'COL': 'LatAM', 'MEX': 'LatAM',
+        'PER': 'LatAM', 'URU': 'LatAM', 'ECU': 'LatAM', 'PAN': 'LatAM', 'CR': 'LatAM',
+        'GUA': 'LatAM', 'DR': 'LatAM', 'PAR': 'LatAM', 'ESV': 'LatAM', 'VEN': 'LatAM',
+        'BOL': 'LatAM', 'JAM': 'LatAM', 'T&T': 'LatAM', 'HON': 'LatAM', 'BAR': 'LatAM',
+        'SUR': 'LatAM',
+        # EMEA
+        'SAF': 'EMEA', 'TUR': 'EMEA', 'POL': 'EMEA', 'HUN': 'EMEA', 'ROM': 'EMEA',
+        'CZE': 'EMEA', 'HRV': 'EMEA', 'BGR': 'EMEA', 'EGY': 'EMEA', 'MOR': 'EMEA',
+        'KEN': 'EMEA', 'NIG': 'EMEA', 'SEN': 'EMEA', 'KSA': 'EMEA', 'UAE': 'EMEA',
+        'QAT': 'EMEA', 'BAH': 'EMEA', 'OMA': 'EMEA', 'JOR': 'EMEA', 'LBN': 'EMEA',
+        'ISR': 'EMEA', 'RUS': 'EMEA', 'UKR': 'EMEA', 'KAZ': 'EMEA', 'SER': 'EMEA',
+        'GHA': 'EMEA', 'IVY': 'EMEA', 'ANG': 'EMEA', 'ETH': 'EMEA', 'TUN': 'EMEA',
+        'LEB': 'EMEA', 'GAB': 'EMEA', 'AZE': 'EMEA', 'MOZ': 'EMEA', 'GEO': 'EMEA',
+        'UZB': 'EMEA', 'ARM': 'EMEA', 'BEN': 'EMEA', 'RWA': 'EMEA', 'CAM': 'EMEA',
+        'IRQ': 'EMEA', 'ZAM': 'EMEA',
+        # Asia
+        'CHI': 'Asia', 'IND': 'Asia', 'IDO': 'Asia', 'THA': 'Asia', 'MAL': 'Asia',
+        'PHI': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'SRL': 'Asia',
         'KOR': 'Asia', 'TWN': 'Asia', 'HKG': 'Asia', 'SGP': 'Asia', 'MAC': 'Asia',
-        'MNG': 'Asia', 'KHM': 'Asia',
+        'MON': 'Asia', 'KHM': 'Asia', 'PAP': 'Asia',
     }
     
     df['region'] = df['country_code'].map(region_mapping)
