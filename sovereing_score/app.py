@@ -5,33 +5,95 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 import os
+import psycopg2
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 # Page config
 st.set_page_config(page_title="EM Sovereign Credit Spread Analysis", layout="wide")
 
-# Load data
-@st.cache_data
+# Database connection helper
+def get_db_connection():
+    """Create database connection using environment variable for password"""
+    db_password = os.environ.get('DB_PASSWORD')
+    
+    if not db_password:
+        st.error("Database password not configured. Please set DB_PASSWORD environment variable.")
+        st.stop()
+    
+    conn = psycopg2.connect(
+        host='gwamdlquantapps-prod-postgresql-server.postgres.database.azure.com',
+        port=5432,
+        database='postgres',
+        user='securitized_team',
+        password=db_password,
+        sslmode='require'
+    )
+    return conn
+
+# Get latest date from database
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_latest_date():
+    """Get the latest date from database"""
+    conn = get_db_connection()
+    
+    try:
+        query = """
+        SELECT MAX(date) as latest_date
+        FROM securitized_research.emd_sovereign_score
+        """
+        
+        df = pd.read_sql(query, conn)
+        latest_date = pd.to_datetime(df['latest_date'].iloc[0]).date()
+    finally:
+        conn.close()
+    
+    return latest_date
+
+# Load data from database
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_data():
-    # Use relative path that works both locally and on Posit Connect
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    """Load data from PostgreSQL database for latest date"""
+    latest_date = get_latest_date()
+    conn = get_db_connection()
     
-    # Try local input folder first (for deployment), then parent directory (for local dev)
-    input_paths = [
-        os.path.join(base_dir, "input", "s_scores.xlsx"),  # Deployed structure
-        os.path.join(base_dir, "..", "input", "s_scores.xlsx")  # Local dev structure
-    ]
+    try:
+        # Query data for latest date
+        query = """
+        SELECT 
+            country,
+            country_code,
+            moodys_rating,
+            moodys_outlook,
+            moodys_rat_date,
+            sp_rating,
+            sp_outlook,
+            st_rat_date,
+            fit_rating,
+            fit_outlook,
+            fit_rat_date,
+            avg_rating,
+            z_spread,
+            current_yield,
+            class,
+            date
+        FROM securitized_research.emd_sovereign_score
+        WHERE date = %s
+        ORDER BY country
+        """
+        
+        df = pd.read_sql(query, conn, params=(latest_date,))
+    finally:
+        conn.close()
     
-    file_path = None
-    for path in input_paths:
-        if os.path.exists(path):
-            file_path = path
-            break
-    
-    if file_path is None:
-        raise FileNotFoundError("Could not find s_scores.xlsx in expected locations")
-    
-    df = pd.read_excel(file_path, sheet_name="ratings_clean")
-    map_df = pd.read_excel(file_path, sheet_name="rating_num_score")
+    # Create rating score mapping (same as before)
+    map_data = {
+        'sp': ['AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
+               'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC+', 'CCC', 'CCC-', 'CC', 'C', 'SD', 'D'],
+        'num_score': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                      11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    }
+    map_df = pd.DataFrame(map_data)
     
     # Regional mapping - using actual country codes from Excel file
     region_mapping = {
@@ -131,9 +193,14 @@ def load_data():
     
     df['is_outlier'] = df.apply(is_true_outlier, axis=1)
     
-    return df, sp_to_num
+    return df, sp_to_num, latest_date
 
-df, sp_to_num = load_data()
+# Get latest date
+latest_date = get_latest_date()
+
+if not latest_date:
+    st.error("No data available in database")
+    st.stop()
 
 # Sidebar with logo
 try:
@@ -149,6 +216,13 @@ try:
 except:
     pass  # If logo not found, just skip it
 
+st.sidebar.markdown("---")
+
+# Load data for latest date
+df, sp_to_num, data_date = load_data()
+
+# Display data date
+st.sidebar.markdown(f"**Data as of:** {data_date.strftime('%Y-%m-%d')}")
 st.sidebar.markdown("---")
 
 # Sidebar filters
