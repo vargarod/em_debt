@@ -250,6 +250,10 @@ def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rati
                 if current_yield_index and current_yield_index in spread_yield_data:
                     current_yield_val = spread_yield_data[current_yield_index].get('PX_LAST')
         
+        # Skip rows with negative z_spread (data quality issue)
+        if z_spread_val is not None and z_spread_val < 0:
+            continue
+        
         # Get ratings
         moodys_rating = data.get(rating_fields['moodys_rating'])
         sp_rating = data.get(rating_fields['sp_rating'])
@@ -262,7 +266,7 @@ def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rati
         
         # Calculate average rating
         numeric_ratings = [r for r in [moodys_numeric, sp_numeric, fit_numeric] if r is not None]
-        avg_rating = np.mean(numeric_ratings) if numeric_ratings else None
+        avg_rating = round(np.mean(numeric_ratings)) if numeric_ratings else None
         
         # Determine class (IG/HY)
         rating_class = None
