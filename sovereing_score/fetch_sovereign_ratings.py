@@ -9,13 +9,14 @@ from datetime import datetime
 import os
 
 
-def fetch_bloomberg_data(securities, fields):
+def fetch_bloomberg_data(securities, fields, reference_date=None):
     """
     Fetch reference data from Bloomberg
     
     Args:
         securities: List of securities
         fields: List of fields to fetch
+        reference_date: Optional date string (YYYYMMDD) for historical data
         
     Returns:
         dict: {security: {field: value}}
@@ -44,6 +45,14 @@ def fetch_bloomberg_data(securities, fields):
     
     for field in fields:
         request.append("fields", field)
+    
+    # Add reference date override if provided
+    if reference_date:
+        overrides = request.getElement("overrides")
+        override = overrides.appendElement()
+        override.setElement("fieldId", "REFERENCE_DATE")
+        override.setElement("value", reference_date)
+        print(f"  Using reference date: {reference_date}")
     
     session.sendRequest(request)
     
@@ -151,10 +160,10 @@ def extract_securities(df_ratings_map):
     return securities_data
 
 
-def fetch_ratings_data(securities_data, rating_fields):
+def fetch_ratings_data(securities_data, rating_fields, reference_date=None):
     """Fetch all ratings data from Bloomberg"""
     securities = [s['security'] for s in securities_data]
-    print(f"\n📡 Fetching ratings data for {len(securities)} securities...")
+    print(f"\nFetching ratings data for {len(securities)} securities...")
     
     # Prepare list of Bloomberg fields to fetch
     bb_fields = [
@@ -171,7 +180,7 @@ def fetch_ratings_data(securities_data, rating_fields):
     ]
     
     # Fetch data from Bloomberg
-    results = fetch_bloomberg_data(securities, bb_fields)
+    results = fetch_bloomberg_data(securities, bb_fields, reference_date)
     
     if results:
         print(f"✓ Successfully fetched data for {len(results)} securities")
@@ -185,9 +194,9 @@ def fetch_ratings_data(securities_data, rating_fields):
     return results
 
 
-def fetch_spread_yield_data(df_z_spread):
+def fetch_spread_yield_data(df_z_spread, reference_date=None):
     """Fetch z_spread and current_yield data from Bloomberg"""
-    print(f"\n📡 Fetching z_spread and current_yield data...")
+    print(f"\nFetching z_spread and current_yield data...")
     
     # Extract unique Bloomberg indices for z_spread and current_yield
     z_spread_indices = df_z_spread['z_spread'].dropna().unique().tolist()
@@ -196,7 +205,7 @@ def fetch_spread_yield_data(df_z_spread):
     all_indices = z_spread_indices + current_yield_indices
     
     # Fetch PX_LAST for all indices
-    results = fetch_bloomberg_data(all_indices, ['PX_LAST'])
+    results = fetch_bloomberg_data(all_indices, ['PX_LAST'], reference_date)
     
     if results:
         print(f"✓ Successfully fetched data for {len(results)} indices")
@@ -221,11 +230,14 @@ def map_rating_to_numeric(rating, df_rating_scale, agency):
     return None
 
 
-def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rating_scale, rating_fields):
+def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rating_scale, rating_fields, as_of_date=None):
     """Create clean dataframe matching ratings_clean format"""
-    print(f"\n🔧 Creating clean dataframe...")
+    print(f"\nCreating clean dataframe...")
     
     rows = []
+    
+    # Use provided as_of_date or today's date
+    date_str = as_of_date if as_of_date else datetime.now().strftime('%Y-%m-%d')
     
     for security, data in ratings_data.items():
         if data is None:
@@ -289,7 +301,7 @@ def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rati
             'z_spread': z_spread_val,
             'current_yield': current_yield_val,
             'class': rating_class,
-            'date': datetime.now().strftime('%Y-%m-%d')
+            'date': date_str
         }
         
         rows.append(row)
@@ -300,11 +312,24 @@ def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rati
     return df_clean
 
 
-def main():
-    """Main execution function"""
+def main(reference_date=None):
+    """Main execution function
+    
+    Args:
+        reference_date: Optional date string (YYYYMMDD) for historical data
+    """
     print("=" * 80)
     print("SOVEREIGN RATINGS BLOOMBERG DATA FETCHER")
     print("=" * 80)
+    
+    # Convert reference_date to display format if provided
+    as_of_date = None
+    if reference_date:
+        # Convert YYYYMMDD to YYYY-MM-DD
+        as_of_date = f"{reference_date[:4]}-{reference_date[4:6]}-{reference_date[6:]}"
+        print(f"\nFetching historical data for: {as_of_date}")
+    else:
+        print(f"\nFetching current data (as of today)")
     
     # File paths
     excel_file = r"c:\code\em_debt\sovereing_score\input\em_sovereign_ratings_numeric_scorev2.xlsx"
@@ -322,18 +347,18 @@ def main():
     rating_fields = extract_rating_fields(df_ratings_map)
     securities_data = extract_securities(df_ratings_map)
     
-    print(f"\n📊 Found {len(securities_data)} securities to process")
-    print(f"📊 Rating fields: {list(rating_fields.values())}")
+    print(f"\nFound {len(securities_data)} securities to process")
+    print(f"Rating fields: {list(rating_fields.values())}")
     
     # Fetch ratings data from Bloomberg
-    ratings_data = fetch_ratings_data(securities_data, rating_fields)
+    ratings_data = fetch_ratings_data(securities_data, rating_fields, reference_date)
     
     if not ratings_data:
         print("❌ Failed to fetch ratings data")
         return
     
     # Fetch spread and yield data
-    spread_yield_data = fetch_spread_yield_data(df_z_spread)
+    spread_yield_data = fetch_spread_yield_data(df_z_spread, reference_date)
     
     if not spread_yield_data:
         print("❌ Failed to fetch spread/yield data")
@@ -341,10 +366,10 @@ def main():
     
     # Create clean dataframe
     df_clean = create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, 
-                                      df_rating_scale, rating_fields)
+                                      df_rating_scale, rating_fields, as_of_date)
     
     # Save to Excel
-    print(f"\n💾 Saving to {output_file}...")
+    print(f"\nSaving to {output_file}...")
     df_clean.to_excel(output_file, index=False, sheet_name='ratings_clean')
     print(f"✓ Saved successfully!")
     
@@ -362,9 +387,21 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    
+    # Check for command line arguments
+    reference_date = None
+    if len(sys.argv) > 1:
+        reference_date = sys.argv[1]
+        print(f"Using reference date from command line: {reference_date}")
+    
     try:
-        main()
+        main(reference_date)
     except Exception as e:
-        print(f"\n❌ Error occurred: {e}")
+        print(f"\nError occurred: {e}")
         import traceback
         traceback.print_exc()
+        print("\nUsage:")
+        print("  Current data: python fetch_sovereign_ratings.py")
+        print("  Historical data: python fetch_sovereign_ratings.py YYYYMMDD")
+        print("  Example: python fetch_sovereign_ratings.py 20260630")
