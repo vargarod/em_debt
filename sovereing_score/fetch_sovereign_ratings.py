@@ -11,7 +11,9 @@ import os
 
 def fetch_bloomberg_data(securities, fields, reference_date=None):
     """
-    Fetch reference data from Bloomberg
+    Fetch reference data from Bloomberg using BLPAPI
+    For current data: uses ReferenceDataRequest
+    For historical data: uses BQL via polars-bloomberg
     
     Args:
         securities: List of securities
@@ -21,79 +23,109 @@ def fetch_bloomberg_data(securities, fields, reference_date=None):
     Returns:
         dict: {security: {field: value}}
     """
-    session_options = blpapi.SessionOptions()
-    session_options.setServerHost("localhost")
-    session_options.setServerPort(8194)
-    
-    session = blpapi.Session(session_options)
-    
-    if not session.start():
-        print("❌ Failed to start session. Is Bloomberg Terminal running?")
-        return None
-    
-    if not session.openService("//blp/refdata"):
-        print("❌ Failed to open //blp/refdata service")
-        session.stop()
-        return None
-    
-    refdata_service = session.getService("//blp/refdata")
-    request = refdata_service.createRequest("ReferenceDataRequest")
-    
-    # Add securities and fields
-    for security in securities:
-        request.append("securities", security)
-    
-    for field in fields:
-        request.append("fields", field)
-    
-    # Add reference date override if provided
     if reference_date:
-        overrides = request.getElement("overrides")
-        override = overrides.appendElement()
-        override.setElement("fieldId", "REFERENCE_DATE")
-        override.setElement("value", reference_date)
-        print(f"  Using reference date: {reference_date}")
-    
-    session.sendRequest(request)
-    
-    results = {}
-    
-    try:
-        while True:
-            event = session.nextEvent(500)
-            
-            if event.eventType() == blpapi.Event.RESPONSE or \
-               event.eventType() == blpapi.Event.PARTIAL_RESPONSE:
-                
-                for msg in event:
-                    security_data = msg.getElement("securityData")
+        # Use BQL for historical data (only works for some fields)
+        from polars_bloomberg import BQuery
+        
+        # Fields to ignore for historical (date fields)
+        ignored_fields = ['RA404', 'RA401', 'RA426']
+        
+        date_str = f"{reference_date[:4]}-{reference_date[4:6]}-{reference_date[6:8]}"
+        print(f"  Using BQL with dates={date_str}")
+        
+        results = {}
+        with BQuery() as bq:
+            for security in securities:
+                security_results = {}
+                for field in fields:
+                    if field in ignored_fields:
+                        security_results[field] = None
+                        continue
                     
-                    for i in range(security_data.numValues()):
-                        field_data = security_data.getValueAsElement(i)
-                        security = field_data.getElementAsString("security")
+                    try:
+                        bql_query = f"get({field}(dates={date_str})) for(['{security}'])"
+                        result = bq.bql(bql_query)
                         
-                        if field_data.hasElement("securityError"):
-                            print(f"⚠ {security}: Error fetching data")
-                            results[security] = {field: None for field in fields}
-                            continue
-                        
-                        field_data_element = field_data.getElement("fieldData")
-                        results[security] = {}
-                        
-                        for field in fields:
-                            if field_data_element.hasElement(field):
-                                value = field_data_element.getElement(field).getValue()
-                                results[security][field] = value
+                        if result and len(result) > 0:
+                            df = result[0]
+                            if not df.is_empty() and len(df.columns) >= 2:
+                                security_results[field] = df[df.columns[1]][0]
                             else:
-                                results[security][field] = None
-            
-            if event.eventType() == blpapi.Event.RESPONSE:
-                break
+                                security_results[field] = None
+                        else:
+                            security_results[field] = None
+                    except:
+                        security_results[field] = None
                 
-    finally:
-        session.stop()
+                results[security] = security_results
+        
+        return results
     
-    return results
+    else:
+        # Use BLPAPI ReferenceDataRequest for current data (gets all fields including outlooks)
+        session_options = blpapi.SessionOptions()
+        session_options.setServerHost("localhost")
+        session_options.setServerPort(8194)
+        
+        session = blpapi.Session(session_options)
+        
+        if not session.start():
+            print("❌ Failed to start session. Is Bloomberg Terminal running?")
+            return None
+        
+        if not session.openService("//blp/refdata"):
+            print("❌ Failed to open //blp/refdata service")
+            session.stop()
+            return None
+        
+        refdata_service = session.getService("//blp/refdata")
+        request = refdata_service.createRequest("ReferenceDataRequest")
+        
+        for security in securities:
+            request.append("securities", security)
+        
+        for field in fields:
+            request.append("fields", field)
+        
+        session.sendRequest(request)
+        
+        results = {}
+        
+        try:
+            while True:
+                event = session.nextEvent(500)
+                
+                if event.eventType() == blpapi.Event.RESPONSE or \
+                   event.eventType() == blpapi.Event.PARTIAL_RESPONSE:
+                    
+                    for msg in event:
+                        security_data = msg.getElement("securityData")
+                        
+                        for i in range(security_data.numValues()):
+                            field_data = security_data.getValueAsElement(i)
+                            security = field_data.getElementAsString("security")
+                            
+                            if field_data.hasElement("securityError"):
+                                results[security] = {field: None for field in fields}
+                                continue
+                            
+                            field_data_element = field_data.getElement("fieldData")
+                            results[security] = {}
+                            
+                            for field in fields:
+                                if field_data_element.hasElement(field):
+                                    value = field_data_element.getElement(field).getValue()
+                                    results[security][field] = value
+                                else:
+                                    results[security][field] = None
+                
+                if event.eventType() == blpapi.Event.RESPONSE:
+                    break
+                    
+        finally:
+            session.stop()
+        
+        return results
 
 
 def load_excel_data(excel_file):
