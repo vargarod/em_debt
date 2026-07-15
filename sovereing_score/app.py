@@ -416,7 +416,8 @@ for class_type in ['IG', 'HY']:
                     data['avg_outlook'],
                     data['moodys_rating'],
                     data['fit_rating'],
-                    data['sp_rating_clean']
+                    data['sp_rating_clean'],
+                    data['current_yield']
                 )),
                 hovertemplate='<b>%{customdata[0]}</b><br>' +
                               'Rating (for chart): %{customdata[1]}<br>' +
@@ -424,6 +425,7 @@ for class_type in ['IG', 'HY']:
                               "Moody's: %{customdata[3]}<br>" +
                               'Fitch: %{customdata[4]}<br>' +
                               'Z-Spread: %{y:.1f} bps<br>' +
+                              'Current Yield: %{customdata[6]:.3f}%<br>' +
                               'Numeric Score: %{x:.1f}<br>' +
                               'Avg Outlook: %{customdata[2]}<br>' +
                               '<extra></extra>'
@@ -458,7 +460,8 @@ if show_outliers and len(df_outliers) > 0:
                     data['avg_outlook'],
                     data['moodys_rating'],
                     data['fit_rating'],
-                    data['sp_rating_clean']
+                    data['sp_rating_clean'],
+                    data['current_yield']
                 )),
                 hovertemplate='<b>%{customdata[0]}</b><br>' +
                               'Rating (for chart): %{customdata[1]}<br>' +
@@ -466,6 +469,7 @@ if show_outliers and len(df_outliers) > 0:
                               "Moody's: %{customdata[3]}<br>" +
                               'Fitch: %{customdata[4]}<br>' +
                               'Z-Spread: %{y:.1f} bps<br>' +
+                              'Current Yield: %{customdata[6]:.3f}%<br>' +
                               'Numeric Score: %{x:.1f}<br>' +
                               'Avg Outlook: %{customdata[2]}<br>' +
                               '<extra></extra>'
@@ -562,13 +566,13 @@ st.subheader("📊 Underlying Data")
 df_display = df_filtered[[
     'country', 'country_code', 'region', 'class', 
     'rating_for_score', 'sp_rating', 'moodys_rating', 'fit_rating',
-    'avg_rating', 'sp_num_score', 'z_spread', 'avg_outlook'
+    'avg_rating', 'sp_num_score', 'z_spread', 'current_yield', 'avg_outlook'
 ]].copy()
 
 df_display.columns = [
     'Country', 'Code', 'Region', 'Class',
     'Rating (Chart)', 'S&P', "Moody's", 'Fitch',
-    'Avg Rating', 'Numeric Score', 'Z-Spread (bps)', 'Outlook'
+    'Avg Rating', 'Numeric Score', 'Z-Spread (bps)', 'Current Yield (%)', 'Outlook'
 ]
 
 df_display = df_display.sort_values('Z-Spread (bps)', ascending=False)
@@ -578,7 +582,8 @@ st.dataframe(
     df_display.style.format({
         'Avg Rating': '{:.2f}',
         'Numeric Score': '{:.1f}',
-        'Z-Spread (bps)': '{:.2f}'
+        'Z-Spread (bps)': '{:.2f}',
+        'Current Yield (%)': '{:.3f}'
     }).background_gradient(subset=['Z-Spread (bps)'], cmap='RdYlGn_r'),
     use_container_width=True,
     height=400
