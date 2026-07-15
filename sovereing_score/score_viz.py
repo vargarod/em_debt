@@ -203,7 +203,7 @@ for score in sp_ticks:
         sp_labels.append(ratings[0] if ratings else str(int(score)))
 ax_top.set_xticks(sp_ticks)
 ax_top.set_xticklabels(sp_labels, fontsize=8, rotation=45)
-ax_top.set_xlabel('S&P Rating', fontsize=10)
+ax_top.set_xlabel('Rating', fontsize=10)
 
 plt.tight_layout()
 plt.savefig('sovereign_spread_scatter.png', dpi=300, bbox_inches='tight')
