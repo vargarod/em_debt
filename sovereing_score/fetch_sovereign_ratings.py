@@ -310,7 +310,7 @@ def create_clean_dataframe(ratings_data, spread_yield_data, df_z_spread, df_rati
         
         # Calculate average rating
         numeric_ratings = [r for r in [moodys_numeric, sp_numeric, fit_numeric] if r is not None]
-        avg_rating = round(np.mean(numeric_ratings)) if numeric_ratings else None
+        avg_rating = np.mean(numeric_ratings) if numeric_ratings else None
         
         # Determine class (IG/HY)
         rating_class = None

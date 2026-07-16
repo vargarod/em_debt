@@ -69,7 +69,7 @@ def insert_data(conn, df):
             row['fit_rating'],
             row['fit_outlook'] if pd.notna(row['fit_outlook']) else None,
             row['fit_rat_date'] if pd.notna(row['fit_rat_date']) else None,
-            int(row['avg_rating']) if pd.notna(row['avg_rating']) else None,
+            float(row['avg_rating']) if pd.notna(row['avg_rating']) else None,
             float(row['z_spread']) if pd.notna(row['z_spread']) else None,
             float(row['current_yield']) if pd.notna(row['current_yield']) else None,
             row['class'] if pd.notna(row['class']) else None,

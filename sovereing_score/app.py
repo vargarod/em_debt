@@ -252,7 +252,7 @@ st.markdown("Interactive analysis of sovereign credit spreads vs. rating score")
 # Filter data
 df_filtered = df[
     (df['z_spread'].notna()) & 
-    (df['sp_num_score'].notna()) &
+    (df['avg_rating'].notna()) &
     (df['region'].isin(regions))
 ].copy()
 
@@ -309,7 +309,7 @@ def get_text_positions(df_data, all_points_x, all_points_y):
     ]
     
     # Get coordinates for this group
-    x_vals = df_data['sp_num_score'].values
+    x_vals = df_data['avg_rating'].values
     y_vals = df_data['z_spread'].values
     
     if len(x_vals) == 0:
@@ -341,7 +341,7 @@ def get_text_positions(df_data, all_points_x, all_points_y):
         
         for pos_name, x_offset, y_offset in position_options:
             # Calculate where the label would be placed (approximate offset in normalized space)
-            label_offset = 0.03  # Approximate label offset distance
+            label_offset = 0.04  # Increased offset distance for larger labels
             label_x = current_x + x_offset * label_offset
             label_y = current_y + y_offset * label_offset
             
@@ -351,14 +351,14 @@ def get_text_positions(df_data, all_points_x, all_points_y):
             # Score: minimum distance to any point (we want to maximize this)
             # Also consider average distance to nearby points
             min_distance = label_distances.min()
-            nearby_mask = distances < 0.12  # Points near the current point
+            nearby_mask = distances < 0.15  # Points near the current point (increased for larger labels)
             avg_nearby_distance = label_distances[nearby_mask].mean() if nearby_mask.sum() > 0 else 1.0
             
             # Combined score: prioritize not being too close to any point
             score = min_distance * 2 + avg_nearby_distance
             
             # Special handling for vertically stacked points (same x, close y)
-            vertical_stack_mask = (np.abs(all_x_norm - current_x) < 0.02) & (distances > 0) & (distances < 0.15)
+            vertical_stack_mask = (np.abs(all_x_norm - current_x) < 0.03) & (distances > 0) & (distances < 0.18)
             if vertical_stack_mask.sum() > 0:
                 # For stacked points, prefer horizontal positions
                 if 'left' in pos_name or 'right' in pos_name:
@@ -384,7 +384,7 @@ df_regular = df_filtered[~df_filtered['is_outlier']]
 df_outliers = df_filtered[df_filtered['is_outlier']]
 
 # Get all point coordinates for global awareness in label positioning
-all_points_x = df_filtered['sp_num_score'].values
+all_points_x = df_filtered['avg_rating'].values
 all_points_y = df_filtered['z_spread'].values
 
 # Add scatter points by group - Regular countries (IG and HY)
@@ -397,7 +397,7 @@ for class_type in ['IG', 'HY']:
             text_positions = get_text_positions(data, all_points_x, all_points_y)
             
             fig.add_trace(go.Scatter(
-                x=data['sp_num_score'],
+                x=data['avg_rating'],
                 y=data['z_spread'],
                 mode='markers+text',
                 name=f'{class_type} - {region}',
@@ -409,7 +409,7 @@ for class_type in ['IG', 'HY']:
                 ),
                 text=data['country_code'],
                 textposition=text_positions,
-                textfont=dict(size=8),
+                textfont=dict(size=12),
                 customdata=np.column_stack((
                     data['country'],
                     data['rating_for_score'],
@@ -426,7 +426,7 @@ for class_type in ['IG', 'HY']:
                               'Fitch: %{customdata[4]}<br>' +
                               'Z-Spread: %{y:.1f} bps<br>' +
                               'Current Yield: %{customdata[6]:.3f}%<br>' +
-                              'Numeric Score: %{x:.1f}<br>' +
+                              'Avg Rating: %{x:.2f}<br>' +
                               'Avg Outlook: %{customdata[2]}<br>' +
                               '<extra></extra>'
             ))
@@ -441,7 +441,7 @@ if show_outliers and len(df_outliers) > 0:
             text_positions = get_text_positions(data, all_points_x, all_points_y)
             
             fig.add_trace(go.Scatter(
-                x=data['sp_num_score'],
+                x=data['avg_rating'],
                 y=data['z_spread'],
                 mode='markers+text',
                 name=f'Non-Rated - {region}',
@@ -453,7 +453,7 @@ if show_outliers and len(df_outliers) > 0:
                 ),
                 text=data['country_code'],
                 textposition=text_positions,
-                textfont=dict(size=8),
+                textfont=dict(size=12),
                 customdata=np.column_stack((
                     data['country'],
                     data['rating_for_score'],
@@ -470,14 +470,14 @@ if show_outliers and len(df_outliers) > 0:
                               'Fitch: %{customdata[4]}<br>' +
                               'Z-Spread: %{y:.1f} bps<br>' +
                               'Current Yield: %{customdata[6]:.3f}%<br>' +
-                              'Numeric Score: %{x:.1f}<br>' +
+                              'Avg Rating: %{x:.2f}<br>' +
                               'Avg Outlook: %{customdata[2]}<br>' +
                               '<extra></extra>'
             ))
 
 # Add fitted curve
 if len(df_filtered) > 5:
-    X = df_filtered['sp_num_score'].values.reshape(-1, 1)
+    X = df_filtered['avg_rating'].values.reshape(-1, 1)
     y = df_filtered['z_spread'].values
     
     # Fit polynomial regression (degree 2)
@@ -504,7 +504,7 @@ if len(df_filtered) > 5:
 annotations = []
 if len(df_filtered) > 0:
     # Get unique numeric scores and their corresponding ratings
-    unique_scores = sorted(df_filtered['sp_num_score'].unique())
+    unique_scores = sorted(df_filtered['avg_rating'].unique())
     
     for score in unique_scores:
         # Find rating(s) for this score
@@ -521,7 +521,7 @@ if len(df_filtered) > 0:
                     yref='paper',
                     text=rating_label,
                     showarrow=False,
-                    font=dict(size=9, color='#666'),
+                    font=dict(size=11, color='#666'),
                     xanchor='center',
                     yanchor='bottom'
                 )
@@ -530,7 +530,7 @@ if len(df_filtered) > 0:
 # Update layout
 fig.update_layout(
     title="",
-    xaxis_title="Numeric Rating Score (Lower = Better)",
+    xaxis_title="Average Rating Score (Lower = Better)",
     yaxis_title="Z-Spread (bps)",
     hovermode='closest',
     height=650,  # Increased height to accommodate top labels
@@ -566,13 +566,13 @@ st.subheader("📊 Underlying Data")
 df_display = df_filtered[[
     'country', 'country_code', 'region', 'class', 
     'rating_for_score', 'sp_rating', 'moodys_rating', 'fit_rating',
-    'avg_rating', 'sp_num_score', 'z_spread', 'current_yield', 'avg_outlook'
+    'avg_rating', 'z_spread', 'current_yield', 'avg_outlook'
 ]].copy()
 
 df_display.columns = [
     'Country', 'Code', 'Region', 'Class',
     'Rating (Chart)', 'S&P', "Moody's", 'Fitch',
-    'Avg Rating', 'Numeric Score', 'Z-Spread (bps)', 'Current Yield (%)', 'Outlook'
+    'Avg Rating', 'Z-Spread (bps)', 'Current Yield (%)', 'Outlook'
 ]
 
 df_display = df_display.sort_values('Z-Spread (bps)', ascending=False)
