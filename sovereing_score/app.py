@@ -503,19 +503,21 @@ if len(df_filtered) > 5:
 # Create annotations for rating labels at top of chart
 annotations = []
 if len(df_filtered) > 0:
-    # Get unique numeric scores and their corresponding ratings
-    unique_scores = sorted(df_filtered['avg_rating'].unique())
+    # Get the range of avg_rating values to determine which rating labels to show
+    min_rating = df_filtered['avg_rating'].min()
+    max_rating = df_filtered['avg_rating'].max()
     
-    for score in unique_scores:
-        # Find rating(s) for this score
-        ratings = [k for k, v in sp_to_num.items() if v == score]
+    # Show integer rating scores within the visible range
+    for int_score in range(int(np.floor(min_rating)), int(np.ceil(max_rating)) + 1):
+        # Find rating(s) for this integer score
+        ratings = [k for k, v in sp_to_num.items() if v == int_score]
         if ratings:
             # Use the first rating or combine multiple
             rating_label = '/'.join(sorted(ratings)[:2])  # Show max 2 ratings if multiple
             
             annotations.append(
                 dict(
-                    x=score,
+                    x=int_score,
                     y=1.08,  # Position above the plot
                     xref='x',
                     yref='paper',
