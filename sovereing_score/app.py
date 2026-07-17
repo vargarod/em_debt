@@ -31,34 +31,50 @@ def get_db_connection():
     )
     return conn
 
-# Get latest date from database
+# Get all available dates from database
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def get_latest_date():
-    """Get the latest date from database"""
+def get_available_dates():
+    """Get all available dates from database (latest + month-end dates)"""
     conn = get_db_connection()
     
     try:
-        query = """
+        # Get latest date (could be daily)
+        latest_query = """
         SELECT MAX(date) as latest_date
         FROM securitized_research.emd_sovereign_score
         """
+        latest_df = pd.read_sql(latest_query, conn)
+        latest_date = pd.to_datetime(latest_df['latest_date'].iloc[0]).date()
         
-        df = pd.read_sql(query, conn)
-        latest_date = pd.to_datetime(df['latest_date'].iloc[0]).date()
+        # Get all month-end dates
+        month_end_query = """
+        SELECT DISTINCT date
+        FROM securitized_research.emd_sovereign_score
+        WHERE EXTRACT(DAY FROM date + INTERVAL '1 day') = 1  -- Month-end dates only
+        ORDER BY date DESC
+        """
+        month_end_df = pd.read_sql(month_end_query, conn)
+        month_end_dates = [pd.to_datetime(d).date() for d in month_end_df['date']]
+        
+        # Combine: latest first, then month-ends (excluding latest if it's already a month-end)
+        if latest_date in month_end_dates:
+            dates = month_end_dates
+        else:
+            dates = [latest_date] + month_end_dates
+            
     finally:
         conn.close()
     
-    return latest_date
+    return dates
 
 # Load data from database
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def load_data():
-    """Load data from PostgreSQL database for latest date"""
-    latest_date = get_latest_date()
+def load_data(selected_date):
+    """Load data from PostgreSQL database for selected date"""
     conn = get_db_connection()
     
     try:
-        # Query data for latest date
+        # Query data for selected date
         query = """
         SELECT 
             country,
@@ -82,7 +98,7 @@ def load_data():
         ORDER BY country
         """
         
-        df = pd.read_sql(query, conn, params=(latest_date,))
+        df = pd.read_sql(query, conn, params=(selected_date,))
     finally:
         conn.close()
     
@@ -173,10 +189,15 @@ def load_data():
     
     df['avg_outlook'] = df.apply(get_avg_outlook, axis=1)
     
-    # Mark outliers/non-rated - only if BOTH S&P and Fitch are not available
+    # Mark outliers/non-rated - includes high-spread distressed countries
     def is_true_outlier(row):
         sp_rating = row['sp_rating_clean']
         fit_rating = row.get('fit_rating_clean', None)
+        z_spread = row.get('z_spread', None)
+        
+        # Check for extreme spreads (> 3000 bps indicates distressed/defaulted)
+        if pd.notna(z_spread) and z_spread > 3000:
+            return True
         
         # If S&P is not rated
         if sp_rating in ['SD', 'NR', 'WR', 'WD']:
@@ -193,12 +214,12 @@ def load_data():
     
     df['is_outlier'] = df.apply(is_true_outlier, axis=1)
     
-    return df, sp_to_num, latest_date
+    return df, sp_to_num, selected_date
 
-# Get latest date
-latest_date = get_latest_date()
+# Get available dates and default to latest
+available_dates = get_available_dates()
 
-if not latest_date:
+if not available_dates:
     st.error("No data available in database")
     st.stop()
 
@@ -218,11 +239,21 @@ except:
 
 st.sidebar.markdown("---")
 
-# Load data for latest date
-df, sp_to_num, data_date = load_data()
+# Date selector
+st.sidebar.header("Data Selection")
+selected_date = st.sidebar.selectbox(
+    "Select Date",
+    options=available_dates,
+    index=0,  # Default to latest (first in list)
+    format_func=lambda x: x.strftime('%Y-%m-%d')
+)
+st.sidebar.markdown("---")
 
-# Display data date
-st.sidebar.markdown(f"**Data as of:** {data_date.strftime('%Y-%m-%d')}")
+# Load data for selected date
+df, sp_to_num, data_date = load_data(selected_date)
+
+# Display selected date
+st.sidebar.markdown(f"**Showing data for:** {data_date.strftime('%Y-%m-%d')}")
 st.sidebar.markdown("---")
 
 # Sidebar filters
@@ -243,16 +274,19 @@ regions = st.sidebar.multiselect(
 )
 
 # Outlier filter
-show_outliers = st.sidebar.checkbox("Include Non-Rated/Defaulted", value=False)
+show_outliers = st.sidebar.checkbox(
+    "Include Non-Rated/Defaulted", 
+    value=False,
+    help="Show countries with extreme spreads (>3000 bps), defaulted, or completely unrated in the data table. These are excluded from the chart for cleaner visualization."
+)
 
 # Title
 st.title("🌍 EM Sovereign Credit Spread Analysis")
 st.markdown("Interactive analysis of sovereign credit spreads vs. rating score")
 
-# Filter data
+# Filter data - start with basic filters
 df_filtered = df[
     (df['z_spread'].notna()) & 
-    (df['avg_rating'].notna()) &
     (df['region'].isin(regions))
 ].copy()
 
@@ -260,13 +294,26 @@ df_filtered = df[
 if credit_quality:
     if show_outliers:
         # Include selected credit qualities OR outliers/non-rated
+        # Outliers can have NULL avg_rating (completely unrated countries)
         df_filtered = df_filtered[
             (df_filtered['class'].isin(credit_quality)) | 
             (df_filtered['is_outlier'])
         ]
     else:
-        # Only include selected credit qualities
-        df_filtered = df_filtered[df_filtered['class'].isin(credit_quality)]
+        # Only include selected credit qualities, and require avg_rating for plotting
+        df_filtered = df_filtered[
+            (df_filtered['class'].isin(credit_quality)) &
+            (df_filtered['avg_rating'].notna())
+        ]
+else:
+    # If no credit quality selected, require avg_rating for non-outliers
+    if show_outliers:
+        df_filtered = df_filtered[
+            (df_filtered['avg_rating'].notna()) | 
+            (df_filtered['is_outlier'])
+        ]
+    else:
+        df_filtered = df_filtered[df_filtered['avg_rating'].notna()]
 
 # Apply outlier filter (exclude outliers if checkbox not selected)
 if not show_outliers:
@@ -379,18 +426,21 @@ fig = go.Figure()
 color_map = {'IG': '#2E86AB', 'HY': '#A23B72', 'Not Rated': '#808080'}
 symbol_map = {'LatAM': 'circle', 'EMEA': 'square', 'Asia': 'triangle-up'}
 
-# Separate outliers from regular countries
-df_regular = df_filtered[~df_filtered['is_outlier']]
-df_outliers = df_filtered[df_filtered['is_outlier']]
+# For plotting, only use countries with valid avg_rating (need x-coordinate)
+# and exclude all outliers for cleaner chart (outliers only appear in data table)
+df_plottable = df_filtered[
+    (df_filtered['avg_rating'].notna()) & 
+    (~df_filtered['is_outlier'])
+].copy()
 
 # Get all point coordinates for global awareness in label positioning
-all_points_x = df_filtered['avg_rating'].values
-all_points_y = df_filtered['z_spread'].values
+all_points_x = df_plottable['avg_rating'].values
+all_points_y = df_plottable['z_spread'].values
 
 # Add scatter points by group - Regular countries (IG and HY)
 for class_type in ['IG', 'HY']:
     for region in ['LatAM', 'EMEA', 'Asia']:
-        data = df_regular[(df_regular['class'] == class_type) & (df_regular['region'] == region)]
+        data = df_plottable[(df_plottable['class'] == class_type) & (df_plottable['region'] == region)]
         
         if len(data) > 0:
             # Get dynamic text positions with global point awareness
@@ -431,54 +481,13 @@ for class_type in ['IG', 'HY']:
                               '<extra></extra>'
             ))
 
-# Plot outliers/non-rated countries in gray (if included)
-if show_outliers and len(df_outliers) > 0:
-    for region in ['LatAM', 'EMEA', 'Asia']:
-        data = df_outliers[df_outliers['region'] == region]
-        
-        if len(data) > 0:
-            # Get dynamic text positions for outliers with global point awareness
-            text_positions = get_text_positions(data, all_points_x, all_points_y)
-            
-            fig.add_trace(go.Scatter(
-                x=data['avg_rating'],
-                y=data['z_spread'],
-                mode='markers+text',
-                name=f'Non-Rated - {region}',
-                marker=dict(
-                    size=12,
-                    color='#808080',  # Gray for all non-rated
-                    symbol=symbol_map.get(region, 'circle'),
-                    line=dict(width=1, color='black')
-                ),
-                text=data['country_code'],
-                textposition=text_positions,
-                textfont=dict(size=12),
-                customdata=np.column_stack((
-                    data['country'],
-                    data['rating_for_score'],
-                    data['avg_outlook'],
-                    data['moodys_rating'],
-                    data['fit_rating'],
-                    data['sp_rating_clean'],
-                    data['current_yield']
-                )),
-                hovertemplate='<b>%{customdata[0]}</b><br>' +
-                              'Rating (for chart): %{customdata[1]}<br>' +
-                              'S&P: %{customdata[5]}<br>' +
-                              "Moody's: %{customdata[3]}<br>" +
-                              'Fitch: %{customdata[4]}<br>' +
-                              'Z-Spread: %{y:.1f} bps<br>' +
-                              'Current Yield: %{customdata[6]:.3f}%<br>' +
-                              'Avg Rating: %{x:.2f}<br>' +
-                              'Avg Outlook: %{customdata[2]}<br>' +
-                              '<extra></extra>'
-            ))
+# Note: Outliers/non-rated countries are excluded from chart for cleaner visualization
+# but are included in the data table when checkbox is checked
 
 # Add fitted curve
-if len(df_filtered) > 5:
-    X = df_filtered['avg_rating'].values.reshape(-1, 1)
-    y = df_filtered['z_spread'].values
+if len(df_plottable) > 5:
+    X = df_plottable['avg_rating'].values.reshape(-1, 1)
+    y = df_plottable['z_spread'].values
     
     # Fit polynomial regression (degree 2)
     poly = PolynomialFeatures(degree=2)
@@ -502,10 +511,10 @@ if len(df_filtered) > 5:
 
 # Create annotations for rating labels at top of chart
 annotations = []
-if len(df_filtered) > 0:
+if len(df_plottable) > 0:
     # Get the range of avg_rating values to determine which rating labels to show
-    min_rating = df_filtered['avg_rating'].min()
-    max_rating = df_filtered['avg_rating'].max()
+    min_rating = df_plottable['avg_rating'].min()
+    max_rating = df_plottable['avg_rating'].max()
     
     # Show integer rating scores within the visible range
     for int_score in range(int(np.floor(min_rating)), int(np.ceil(max_rating)) + 1):
@@ -579,11 +588,10 @@ df_display.columns = [
 
 df_display = df_display.sort_values('Z-Spread (bps)', ascending=False)
 
-# Display with formatting
+# Display with formatting (handle NaN values in avg_rating)
 st.dataframe(
     df_display.style.format({
-        'Avg Rating': '{:.2f}',
-        'Numeric Score': '{:.1f}',
+        'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
         'Z-Spread (bps)': '{:.2f}',
         'Current Yield (%)': '{:.3f}'
     }).background_gradient(subset=['Z-Spread (bps)'], cmap='RdYlGn_r'),
