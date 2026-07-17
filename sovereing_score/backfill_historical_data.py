@@ -49,14 +49,14 @@ def fetch_and_upload_for_date(reference_date):
     print(f"PROCESSING DATE: {reference_date}")
     print("=" * 80)
     
-    # Import the main functions
-    from fetch_sovereign_ratings import main as fetch_main
+    # Import the historical BQL fetch function
+    from fetch_historical_bql import fetch_historical_bql
     from upload_to_postgres import upload_to_postgres
     
     try:
-        # Step 1: Fetch data
-        print("\n[1] Fetching Bloomberg data...")
-        fetch_main(reference_date)
+        # Step 1: Fetch historical data using BQL
+        print("\n[1] Fetching historical Bloomberg data using BQL...")
+        df = fetch_historical_bql(reference_date)
         print(f"✓ Fetch completed for {reference_date}")
         
         # Small delay to ensure file is written
@@ -91,24 +91,28 @@ def main():
     print("BACKFILL HISTORICAL SOVEREIGN RATINGS DATA")
     print("=" * 80)
     
-    # Backfill previous 5 years
-    end_date = '2026-07-15'  # Today
+    # FULL 5-YEAR BACKFILL
+    end_date = '2026-07-17'  # Today
     start_date = '2021-01-01'  # Last 5 years
     
     print(f"\nGenerating month-end dates from {start_date} to {end_date}...")
     
     try:
-        month_ends = get_month_ends(start_date, end_date)
-        print(f"Found {len(month_ends)} month-end dates: {month_ends}")
-        
         # Change to script directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
         os.chdir(script_dir)
         
+        month_ends = get_month_ends(start_date, end_date)
+        print(f"Found {len(month_ends)} month-end dates")
+        
         successful = 0
         failed = 0
         
-        for date in month_ends:
+        for i, date in enumerate(month_ends, 1):
+            print(f"\n{'='*80}")
+            print(f"Processing {i}/{len(month_ends)}: {date}")
+            print(f"{'='*80}")
+            
             if fetch_and_upload_for_date(date):
                 successful += 1
             else:
@@ -123,7 +127,7 @@ def main():
         print(f"Failed: {failed}")
         
         if failed == 0:
-            print("\nBackfill completed successfully!")
+            print("\n✓ Backfill completed successfully!")
         else:
             print(f"\nWARNING: Backfill completed with {failed} failures")
             
