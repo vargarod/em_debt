@@ -12,6 +12,31 @@ from dateutil.relativedelta import relativedelta
 # Page config
 st.set_page_config(page_title="EM Sovereign Credit Spread Analysis", layout="wide")
 
+# Regional mapping - using actual country codes from Excel file
+REGION_MAPPING = {
+    # LatAM
+    'ARG': 'LatAM', 'BRZ': 'LatAM', 'CHL': 'LatAM', 'COL': 'LatAM', 'MEX': 'LatAM',
+    'PER': 'LatAM', 'URU': 'LatAM', 'ECU': 'LatAM', 'PAN': 'LatAM', 'CR': 'LatAM',
+    'GUA': 'LatAM', 'DR': 'LatAM', 'PAR': 'LatAM', 'ESV': 'LatAM', 'VEN': 'LatAM',
+    'BOL': 'LatAM', 'JAM': 'LatAM', 'T&T': 'LatAM', 'HON': 'LatAM', 'BAR': 'LatAM',
+    'SUR': 'LatAM',
+    # EMEA
+    'SAF': 'EMEA', 'TUR': 'EMEA', 'POL': 'EMEA', 'HUN': 'EMEA', 'ROM': 'EMEA',
+    'CZE': 'EMEA', 'HRV': 'EMEA', 'BGR': 'EMEA', 'EGY': 'EMEA', 'MOR': 'EMEA',
+    'KEN': 'EMEA', 'NIG': 'EMEA', 'SEN': 'EMEA', 'KSA': 'EMEA', 'UAE': 'EMEA',
+    'QAT': 'EMEA', 'BAH': 'EMEA', 'OMA': 'EMEA', 'JOR': 'EMEA', 'LBN': 'EMEA',
+    'ISR': 'EMEA', 'RUS': 'EMEA', 'UKR': 'EMEA', 'KAZ': 'EMEA', 'SER': 'EMEA',
+    'GHA': 'EMEA', 'IVY': 'EMEA', 'ANG': 'EMEA', 'ETH': 'EMEA', 'TUN': 'EMEA',
+    'LEB': 'EMEA', 'GAB': 'EMEA', 'AZE': 'EMEA', 'MOZ': 'EMEA', 'GEO': 'EMEA',
+    'UZB': 'EMEA', 'ARM': 'EMEA', 'BEN': 'EMEA', 'RWA': 'EMEA', 'CAM': 'EMEA',
+    'IRQ': 'EMEA', 'ZAM': 'EMEA',
+    # Asia
+    'CHI': 'Asia', 'IND': 'Asia', 'IDO': 'Asia', 'THA': 'Asia', 'MAL': 'Asia',
+    'PHI': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'SRL': 'Asia',
+    'KOR': 'Asia', 'TWN': 'Asia', 'HKG': 'Asia', 'SGP': 'Asia', 'MAC': 'Asia',
+    'MON': 'Asia', 'KHM': 'Asia', 'PAP': 'Asia',
+}
+
 # Database connection helper
 def get_db_connection():
     """Create database connection using environment variable for password"""
@@ -111,32 +136,7 @@ def load_data(selected_date):
     }
     map_df = pd.DataFrame(map_data)
     
-    # Regional mapping - using actual country codes from Excel file
-    region_mapping = {
-        # LatAM
-        'ARG': 'LatAM', 'BRZ': 'LatAM', 'CHL': 'LatAM', 'COL': 'LatAM', 'MEX': 'LatAM',
-        'PER': 'LatAM', 'URU': 'LatAM', 'ECU': 'LatAM', 'PAN': 'LatAM', 'CR': 'LatAM',
-        'GUA': 'LatAM', 'DR': 'LatAM', 'PAR': 'LatAM', 'ESV': 'LatAM', 'VEN': 'LatAM',
-        'BOL': 'LatAM', 'JAM': 'LatAM', 'T&T': 'LatAM', 'HON': 'LatAM', 'BAR': 'LatAM',
-        'SUR': 'LatAM',
-        # EMEA
-        'SAF': 'EMEA', 'TUR': 'EMEA', 'POL': 'EMEA', 'HUN': 'EMEA', 'ROM': 'EMEA',
-        'CZE': 'EMEA', 'HRV': 'EMEA', 'BGR': 'EMEA', 'EGY': 'EMEA', 'MOR': 'EMEA',
-        'KEN': 'EMEA', 'NIG': 'EMEA', 'SEN': 'EMEA', 'KSA': 'EMEA', 'UAE': 'EMEA',
-        'QAT': 'EMEA', 'BAH': 'EMEA', 'OMA': 'EMEA', 'JOR': 'EMEA', 'LBN': 'EMEA',
-        'ISR': 'EMEA', 'RUS': 'EMEA', 'UKR': 'EMEA', 'KAZ': 'EMEA', 'SER': 'EMEA',
-        'GHA': 'EMEA', 'IVY': 'EMEA', 'ANG': 'EMEA', 'ETH': 'EMEA', 'TUN': 'EMEA',
-        'LEB': 'EMEA', 'GAB': 'EMEA', 'AZE': 'EMEA', 'MOZ': 'EMEA', 'GEO': 'EMEA',
-        'UZB': 'EMEA', 'ARM': 'EMEA', 'BEN': 'EMEA', 'RWA': 'EMEA', 'CAM': 'EMEA',
-        'IRQ': 'EMEA', 'ZAM': 'EMEA',
-        # Asia
-        'CHI': 'Asia', 'IND': 'Asia', 'IDO': 'Asia', 'THA': 'Asia', 'MAL': 'Asia',
-        'PHI': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'SRL': 'Asia',
-        'KOR': 'Asia', 'TWN': 'Asia', 'HKG': 'Asia', 'SGP': 'Asia', 'MAC': 'Asia',
-        'MON': 'Asia', 'KHM': 'Asia', 'PAP': 'Asia',
-    }
-    
-    df['region'] = df['country_code'].map(region_mapping)
+    df['region'] = df['country_code'].map(REGION_MAPPING)
     df['sp_rating_clean'] = df['sp_rating'].str.replace('u', '', regex=False)
     df['fit_rating_clean'] = df['fit_rating'].str.replace('u', '', regex=False) if 'fit_rating' in df.columns else df['fit_rating']
     
@@ -216,6 +216,52 @@ def load_data(selected_date):
     
     return df, sp_to_num, selected_date
 
+# Load carry-to-vol data from database
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_carry_to_vol_data(as_of_date):
+    """Load carry-to-vol metrics for a specific as-of date, joined with latest ratings"""
+    conn = get_db_connection()
+    
+    try:
+        # Query carry-to-vol data and join with latest sovereign score for ratings
+        query = """
+        WITH latest_date AS (
+            SELECT MAX(date) as max_date
+            FROM securitized_research.emd_sovereign_score
+        )
+        SELECT 
+            c.country_code,
+            c.country,
+            c.carry_bps,
+            c.vol_bps,
+            c.carry_to_vol,
+            c.data_points,
+            c.as_of_date,
+            s.sp_rating,
+            s.moodys_rating,
+            s.fit_rating,
+            s.avg_rating,
+            s.z_spread,
+            s.current_yield,
+            s.class
+        FROM securitized_research.emd_country_carry_to_vol c
+        LEFT JOIN securitized_research.emd_sovereign_score s 
+            ON c.country_code = s.country_code 
+            AND s.date = (SELECT max_date FROM latest_date)
+        WHERE c.as_of_date = %s
+        ORDER BY c.carry_to_vol DESC
+        """
+        
+        df = pd.read_sql(query, conn, params=(as_of_date,))
+        
+        # Add region mapping
+        df['region'] = df['country_code'].map(REGION_MAPPING)
+        
+    finally:
+        conn.close()
+    
+    return df
+
 # Get available dates and default to latest
 available_dates = get_available_dates()
 
@@ -284,7 +330,7 @@ show_outliers = st.sidebar.checkbox(
 st.title("🌍 EM Sovereign Credit Spread Analysis")
 
 # Create tabs
-tab1, tab2 = st.tabs(["📊 Sovereign Score", "📈 Historical Spread"])
+tab1, tab2, tab3 = st.tabs(["📊 Sovereign Score", "📉 Carry-to-Vol", "📈 Historical Spread"])
 
 # ============================================================================
 # TAB 1: SOVEREIGN SCORE (Current scatter plot)
@@ -642,9 +688,329 @@ with tab1:
         }))
 
 # ============================================================================
-# TAB 2: HISTORICAL SPREAD
+# TAB 2: CARRY-TO-VOL ANALYSIS
 # ============================================================================
 with tab2:
+    st.markdown("Carry-to-Volatility analysis: Current yield (bps) per unit of spread volatility (bps)")
+    
+    # Load carry-to-vol data for latest month-end (2026-06-30)
+    ctv_as_of_date = '2026-06-30'
+    df_ctv = load_carry_to_vol_data(ctv_as_of_date)
+    
+    if df_ctv.empty:
+        st.warning(f"No carry-to-vol data available for {ctv_as_of_date}")
+    else:
+        # Clean ratings and detect outliers
+        df_ctv['sp_rating_clean'] = df_ctv['sp_rating'].str.replace('u', '', regex=False)
+        df_ctv['fit_rating_clean'] = df_ctv['fit_rating'].str.replace('u', '', regex=False) if 'fit_rating' in df_ctv.columns else df_ctv['fit_rating']
+        
+        # Mark outliers - same logic as main tab
+        def is_ctv_outlier(row):
+            sp_rating = row['sp_rating_clean']
+            fit_rating = row.get('fit_rating_clean', None)
+            z_spread = row.get('z_spread', None)
+            
+            # Check for extreme spreads (> 3000 bps indicates distressed/defaulted)
+            if pd.notna(z_spread) and z_spread > 3000:
+                return True
+            
+            # If S&P is not rated
+            if sp_rating in ['SD', 'NR', 'WR', 'WD']:
+                # Check if Fitch is available and valid
+                if pd.notna(fit_rating) and fit_rating not in ['SD', 'NR', 'WR', 'WD']:
+                    return False  # Has Fitch rating, so not an outlier
+                else:
+                    return True  # No valid alternative rating
+            else:
+                # S&P is defaulted
+                if sp_rating in ['SD']:
+                    return True
+                return False
+        
+        df_ctv['is_outlier'] = df_ctv.apply(is_ctv_outlier, axis=1)
+        
+        # Apply filters: credit quality, region, avg_rating, and outliers
+        # Start with basic filters
+        df_ctv_filtered = df_ctv[df_ctv['region'].isin(regions)].copy()
+        
+        # Apply credit quality filter
+        if credit_quality:
+            if show_outliers:
+                # Include selected credit qualities OR outliers/non-rated
+                df_ctv_filtered = df_ctv_filtered[
+                    (df_ctv_filtered['class'].isin(credit_quality)) | 
+                    (df_ctv_filtered['is_outlier'])
+                ]
+            else:
+                # Only include selected credit qualities, and require avg_rating for plotting
+                df_ctv_filtered = df_ctv_filtered[
+                    (df_ctv_filtered['class'].isin(credit_quality)) &
+                    (df_ctv_filtered['avg_rating'].notna())
+                ]
+        else:
+            # If no credit quality selected, require avg_rating for non-outliers
+            if show_outliers:
+                df_ctv_filtered = df_ctv_filtered[
+                    (df_ctv_filtered['avg_rating'].notna()) | 
+                    (df_ctv_filtered['is_outlier'])
+                ]
+            else:
+                df_ctv_filtered = df_ctv_filtered[df_ctv_filtered['avg_rating'].notna()]
+        
+        # Apply outlier filter (exclude outliers if checkbox not selected)
+        if not show_outliers:
+            df_ctv_filtered = df_ctv_filtered[~df_ctv_filtered['is_outlier']]
+        
+        # Main metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Countries", len(df_ctv_filtered))
+        with col2:
+            avg_ctv = df_ctv_filtered['carry_to_vol'].mean() if len(df_ctv_filtered) > 0 else 0
+            st.metric("Avg Carry-to-Vol", f"{avg_ctv:.2f}")
+        with col3:
+            if len(df_ctv_filtered) > 0:
+                st.metric("C/V Range", f"{df_ctv_filtered['carry_to_vol'].min():.2f} - {df_ctv_filtered['carry_to_vol'].max():.2f}")
+            else:
+                st.metric("C/V Range", "N/A")
+        
+        if len(df_ctv_filtered) == 0:
+            st.warning("No countries match the selected filters")
+        else:
+            # Function to calculate optimal text positions for carry-to-vol chart
+            def get_ctv_text_positions(df_data, all_points_x, all_points_y):
+                """
+                Dynamically assign text positions based on point density and proximity.
+                Adapted for carry-to-vol chart.
+                """
+                if len(df_data) == 0:
+                    return []
+                
+                position_options = [
+                    ('top center', 0, 1),
+                    ('bottom center', 0, -1),
+                    ('middle right', 1, 0),
+                    ('middle left', -1, 0),
+                    ('top right', 0.7, 0.7),
+                    ('top left', -0.7, 0.7),
+                    ('bottom right', 0.7, -0.7),
+                    ('bottom left', -0.7, -0.7)
+                ]
+                
+                x_vals = df_data['avg_rating'].values
+                y_vals = df_data['carry_to_vol'].values
+                
+                if len(x_vals) == 0:
+                    return []
+                
+                # Normalize coordinates
+                x_range = all_points_x.max() - all_points_x.min() if all_points_x.max() != all_points_x.min() else 1
+                y_range = all_points_y.max() - all_points_y.min() if all_points_y.max() != all_points_y.min() else 1
+                
+                all_x_norm = (all_points_x - all_points_x.min()) / x_range if x_range > 0 else all_points_x
+                all_y_norm = (all_points_y - all_points_y.min()) / y_range if y_range > 0 else all_points_y
+                
+                x_norm = (x_vals - all_points_x.min()) / x_range if x_range > 0 else x_vals
+                y_norm = (y_vals - all_points_y.min()) / y_range if y_range > 0 else y_vals
+                
+                positions = []
+                
+                for i in range(len(df_data)):
+                    current_x = x_norm[i]
+                    current_y = y_norm[i]
+                    
+                    distances = np.sqrt((all_x_norm - current_x)**2 + (all_y_norm - current_y)**2)
+                    
+                    best_position = 'top center'
+                    best_score = -float('inf')
+                    
+                    for pos_name, x_offset, y_offset in position_options:
+                        label_offset = 0.04
+                        label_x = current_x + x_offset * label_offset
+                        label_y = current_y + y_offset * label_offset
+                        
+                        label_distances = np.sqrt((all_x_norm - label_x)**2 + (all_y_norm - label_y)**2)
+                        
+                        min_distance = label_distances.min()
+                        nearby_mask = distances < 0.15
+                        avg_nearby_distance = label_distances[nearby_mask].mean() if nearby_mask.sum() > 0 else 1.0
+                        
+                        score = min_distance * 2 + avg_nearby_distance
+                        
+                        # Prefer horizontal positions for vertically stacked points
+                        vertical_stack_mask = (np.abs(all_x_norm - current_x) < 0.03) & (distances > 0) & (distances < 0.18)
+                        if vertical_stack_mask.sum() > 0:
+                            if 'left' in pos_name or 'right' in pos_name:
+                                score *= 1.5
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_position = pos_name
+                    
+                    positions.append(best_position)
+                
+                return positions
+            
+            # For plotting, exclude outliers from chart (even if show_outliers is True)
+            # Outliers will only show in the data table
+            df_ctv_plottable = df_ctv_filtered[
+                (df_ctv_filtered['avg_rating'].notna()) & 
+                (~df_ctv_filtered['is_outlier'])
+            ].copy()
+            
+            # Get all point coordinates for smart label positioning
+            all_points_x = df_ctv_plottable['avg_rating'].values
+            all_points_y = df_ctv_plottable['carry_to_vol'].values
+            
+            # Calculate optimal text positions
+            text_positions = get_ctv_text_positions(df_ctv_plottable, all_points_x, all_points_y)
+            
+            # Create scatter plot
+            fig_ctv = go.Figure()
+            
+            # Add scatter points
+            fig_ctv.add_trace(go.Scatter(
+                x=df_ctv_plottable['avg_rating'],
+                y=df_ctv_plottable['carry_to_vol'],
+                mode='markers+text',
+                text=df_ctv_plottable['country_code'],
+                textposition=text_positions,
+                textfont=dict(size=12),
+                marker=dict(
+                    size=10,
+                    color=df_ctv_plottable['carry_to_vol'],
+                    colorscale='RdYlGn',
+                    colorbar=dict(title="Carry-to-Vol"),
+                    showscale=True
+                ),
+                customdata=np.column_stack((
+                    df_ctv_plottable['country'],
+                    df_ctv_plottable['sp_rating'].fillna('N/A'),
+                    df_ctv_plottable['moodys_rating'].fillna('N/A'),
+                    df_ctv_plottable['fit_rating'].fillna('N/A'),
+                    df_ctv_plottable['carry_bps'],
+                    df_ctv_plottable['vol_bps'],
+                    df_ctv_plottable['z_spread'].fillna(0),
+                    df_ctv_plottable['current_yield'].fillna(0),
+                    df_ctv_plottable['region'].fillna('N/A'),
+                    df_ctv_plottable['class'].fillna('N/A')
+                )),
+                hovertemplate='<b>%{customdata[0]}</b> (%{text})<br>' +
+                             'Avg Rating: %{x:.2f}<br>' +
+                             'Carry-to-Vol: %{y:.3f}<br>' +
+                             '<br>' +
+                             'Carry: %{customdata[4]:.0f} bps<br>' +
+                             'Volatility: %{customdata[5]:.0f} bps<br>' +
+                             'Z-Spread: %{customdata[6]:.1f} bps<br>' +
+                             'Current Yield: %{customdata[7]:.3f}%<br>' +
+                             '<br>' +
+                             'S&P: %{customdata[1]}<br>' +
+                             "Moody's: %{customdata[2]}<br>" +
+                             'Fitch: %{customdata[3]}<br>' +
+                             'Region: %{customdata[8]}<br>' +
+                             'Class: %{customdata[9]}<br>' +
+                             '<extra></extra>'
+            ))
+            
+            # Add fitted curve
+            if len(df_ctv_plottable) > 5:
+                X = df_ctv_plottable['avg_rating'].values.reshape(-1, 1)
+                y = df_ctv_plottable['carry_to_vol'].values
+                
+                # Fit polynomial regression (degree 2)
+                poly = PolynomialFeatures(degree=2)
+                X_poly = poly.fit_transform(X)
+                model = LinearRegression()
+                model.fit(X_poly, y)
+                
+                # Generate smooth curve
+                x_curve = np.linspace(X.min(), X.max(), 100).reshape(-1, 1)
+                x_curve_poly = poly.transform(x_curve)
+                y_curve = model.predict(x_curve_poly)
+                
+                fig_ctv.add_trace(go.Scatter(
+                    x=x_curve.flatten(),
+                    y=y_curve,
+                    mode='lines',
+                    name='Fitted Curve',
+                    line=dict(color='red', width=2, dash='dash'),
+                    hoverinfo='skip'
+                ))
+            
+            # Update layout with rating scale annotations
+            fig_ctv.update_layout(
+                title=f"Carry-to-Volatility vs. Credit Rating (as of {ctv_as_of_date})",
+                xaxis_title="Average Rating Score",
+                yaxis_title="Carry-to-Vol (bps/bps)",
+                hovermode='closest',
+                height=600,
+                xaxis=dict(
+                    range=[0, 24],
+                    tickmode='array',
+                    tickvals=[1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23],
+                    ticktext=['AAA', 'AA', 'A+', 'A-', 'BBB', 'BB+', 'BB-', 'B', 'CCC+', 'CCC-', 'CC', 'D'],
+                    tickfont=dict(size=11),
+                    autorange='reversed'  # Better ratings (lower numbers) on left
+                ),
+                yaxis=dict(
+                    tickfont=dict(size=11)
+                ),
+                showlegend=True,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            st.plotly_chart(fig_ctv, use_container_width=True)
+            
+            # Data table
+            st.subheader("📊 Carry-to-Vol Metrics by Country")
+            
+            display_ctv = df_ctv_filtered[['country', 'country_code', 'region', 'class', 
+                                            'carry_bps', 'vol_bps', 'carry_to_vol', 
+                                            'sp_rating', 'moodys_rating', 'fit_rating', 'avg_rating', 
+                                            'z_spread', 'current_yield']].copy()
+            
+            display_ctv.columns = ['Country', 'Code', 'Region', 'Class', 'Carry (bps)', 'Vol (bps)', 'Carry-to-Vol',
+                                   'S&P', "Moody's", 'Fitch', 'Avg Rating', 'Z-Spread (bps)', 'Current Yield (%)']
+            
+            st.dataframe(
+                display_ctv.style.format({
+                    'Carry (bps)': '{:.0f}',
+                    'Vol (bps)': '{:.0f}',
+                    'Carry-to-Vol': '{:.3f}',
+                    'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
+                    'Z-Spread (bps)': lambda x: f'{x:.1f}' if pd.notna(x) else 'N/A',
+                    'Current Yield (%)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A'
+                }).background_gradient(subset=['Carry-to-Vol'], cmap='RdYlGn'),
+                use_container_width=True,
+                height=500
+            )
+        
+        # Interpretation guide
+        st.markdown("---")
+        st.subheader("📖 Interpretation Guide")
+        st.markdown("""
+        **Carry-to-Volatility Ratio** measures how many basis points of carry (current yield) you earn per unit of spread volatility (risk).
+        
+        - **High C/V (>7.0)**: Strong risk-adjusted carry - stable spreads relative to yield
+        - **Medium C/V (3.0-7.0)**: Moderate risk-adjusted carry
+        - **Low C/V (<3.0)**: Weak risk-adjusted carry - volatile spreads relative to yield
+        
+        **Methodology:**
+        - Carry: Current yield in basis points
+        - Volatility: Annualized standard deviation of monthly z-spread changes (in bps) over 5 years
+        - Ratio: Carry (bps) ÷ Volatility (bps)
+        """)
+
+# ============================================================================
+# TAB 3: HISTORICAL SPREAD
+# ============================================================================
+with tab3:
     st.markdown("Historical view of sovereign credit spreads and ratings over time")
     
     # Get list of all unique countries
