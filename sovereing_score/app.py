@@ -214,6 +214,50 @@ def load_data(selected_date):
     
     df['is_outlier'] = df.apply(is_true_outlier, axis=1)
     
+    # Add rating bucket for peer comparison
+    def get_rating_bucket(rating):
+        if pd.isna(rating):
+            return 'NR'
+        elif rating <= 3:
+            return 'AAA-AA'
+        elif rating <= 5:
+            return 'A'
+        elif rating <= 9:
+            return 'BBB'
+        elif rating <= 13:
+            return 'BB'
+        elif rating <= 17:
+            return 'B'
+        else:
+            return 'CCC+'
+    
+    df['rating_bucket'] = df['avg_rating'].apply(get_rating_bucket)
+    
+    # Calculate z-score (std devs from peer mean) for spread within rating bucket
+    # Negative z-score = cheap vs peers, Positive = expensive vs peers
+    df['spread_zscore'] = df.groupby('rating_bucket')['z_spread'].transform(
+        lambda x: (x - x.mean()) / x.std() if len(x) > 2 and x.std() > 0 else 0
+    )
+    
+    # Add visual signal for relative value
+    # Positive z-score = wider spread than peers = CHEAP (good value)
+    # Negative z-score = tighter spread than peers = RICH (expensive)
+    def get_value_signal(z):
+        if pd.isna(z):
+            return '⚪ N/A'
+        elif z > 1.0:
+            return '🟢 Very Cheap'
+        elif z > 0.5:
+            return '🟢 Cheap'
+        elif z > -0.5:
+            return '🟡 Fair'
+        elif z > -1.0:
+            return '🔴 Rich'
+        else:
+            return '🔴 Very Rich'
+    
+    df['value_signal'] = df['spread_zscore'].apply(get_value_signal)
+    
     return df, sp_to_num, selected_date
 
 # Load carry-to-vol data from database
@@ -256,6 +300,51 @@ def load_carry_to_vol_data(as_of_date):
         
         # Add region mapping
         df['region'] = df['country_code'].map(REGION_MAPPING)
+        
+        # Add rating bucket for peer comparison
+        def get_rating_bucket(rating):
+            if pd.isna(rating):
+                return 'NR'
+            elif rating <= 3:
+                return 'AAA-AA'
+            elif rating <= 5:
+                return 'A'
+            elif rating <= 9:
+                return 'BBB'
+            elif rating <= 13:
+                return 'BB'
+            elif rating <= 17:
+                return 'B'
+            else:
+                return 'CCC+'
+        
+        df['rating_bucket'] = df['avg_rating'].apply(get_rating_bucket)
+        
+        # Calculate z-score for carry-to-vol within rating bucket
+        # Positive z-score = better risk-adjusted returns than peers
+        # Negative z-score = worse risk-adjusted returns than peers
+        df['ctv_zscore'] = df.groupby('rating_bucket')['carry_to_vol'].transform(
+            lambda x: (x - x.mean()) / x.std() if len(x) > 2 and x.std() > 0 else 0
+        )
+        
+        # Add visual signal for risk-adjusted return quality
+        # Positive z-score = better compensation per unit of risk than peers = GOOD
+        # Negative z-score = worse compensation per unit of risk than peers = POOR
+        def get_ctv_value_signal(z):
+            if pd.isna(z):
+                return '⚪ N/A'
+            elif z > 1.0:
+                return '🟢 Excellent'
+            elif z > 0.5:
+                return '🟢 Good'
+            elif z > -0.5:
+                return '🟡 Average'
+            elif z > -1.0:
+                return '🔴 Below Avg'
+            else:
+                return '🔴 Poor'
+        
+        df['ctv_value_signal'] = df['ctv_zscore'].apply(get_ctv_value_signal)
         
     finally:
         conn.close()
@@ -630,24 +719,27 @@ with tab1:
     df_display = df_filtered[[
         'country', 'country_code', 'region', 'class', 
         'rating_for_score', 'sp_rating', 'moodys_rating', 'fit_rating',
-        'avg_rating', 'z_spread', 'current_yield', 'avg_outlook'
+        'avg_rating', 'rating_bucket', 'z_spread', 'spread_zscore', 'value_signal',
+        'current_yield', 'avg_outlook'
     ]].copy()
 
     df_display.columns = [
         'Country', 'Code', 'Region', 'Class',
         'Rating (Chart)', 'S&P', "Moody's", 'Fitch',
-        'Avg Rating', 'Z-Spread (bps)', 'Current Yield (%)', 'Outlook'
+        'Avg Rating', 'Peer Group', 'Z-Spread (bps)', 'Z-Score vs Peers', 'Value Signal',
+        'Current Yield (%)', 'Outlook'
     ]
 
-    df_display = df_display.sort_values('Z-Spread (bps)', ascending=False)
+    df_display = df_display.sort_values('Z-Score vs Peers', ascending=False)  # Highest (widest/cheapest) first
 
     # Display with formatting (handle NaN values in avg_rating)
     st.dataframe(
         df_display.style.format({
             'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
             'Z-Spread (bps)': '{:.2f}',
+            'Z-Score vs Peers': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
             'Current Yield (%)': '{:.3f}'
-        }).background_gradient(subset=['Z-Spread (bps)'], cmap='RdYlGn_r'),
+        }).background_gradient(subset=['Z-Score vs Peers'], cmap='RdYlGn_r', vmin=-2, vmax=2),
         use_container_width=True,
         height=400
     )
@@ -686,6 +778,21 @@ with tab1:
             'Median Spread': '{:.1f}',
             'Std Dev': '{:.1f}'
         }))
+    
+    # Value signal interpretation
+    st.markdown("---")
+    st.subheader("📖 Value Signal Guide")
+    st.markdown("""
+    **Z-Score vs Peers** measures how expensive/cheap a country trades relative to similar-rated sovereigns:
+    - **🟢 Very Cheap (z > 1.0)**: Spread >1 std dev WIDER than peers - **potential value opportunity**
+    - **🟢 Cheap (0.5 < z < 1.0)**: Spread wider than peers - may offer relative value
+    - **🟡 Fair (-0.5 < z < 0.5)**: Trading in-line with rating peers - fairly valued
+    - **🔴 Rich (-1.0 < z < -0.5)**: Spread tighter than peers - may be expensive
+    - **🔴 Very Rich (z < -1.0)**: Spread >1 std dev TIGHTER than peers - **potentially overvalued**
+    
+    Countries are grouped into peer buckets (A, BBB, BB, B) based on their average rating score.
+    **REMEMBER:** Wider spread (higher yield) = Cheap. Tighter spread (lower yield) = Rich.
+    """)
 
 # ============================================================================
 # TAB 2: CARRY-TO-VOL ANALYSIS
@@ -971,22 +1078,29 @@ with tab2:
             st.subheader("📊 Carry-to-Vol Metrics by Country")
             
             display_ctv = df_ctv_filtered[['country', 'country_code', 'region', 'class', 
-                                            'carry_bps', 'vol_bps', 'carry_to_vol', 
-                                            'sp_rating', 'moodys_rating', 'fit_rating', 'avg_rating', 
+                                            'carry_bps', 'vol_bps', 'carry_to_vol', 'rating_bucket',
+                                            'ctv_zscore', 'ctv_value_signal',
+                                            'sp_rating', 'moodys_rating', 'fit_rating', 'avg_rating',
                                             'z_spread', 'current_yield']].copy()
             
             display_ctv.columns = ['Country', 'Code', 'Region', 'Class', 'Carry (bps)', 'Vol (bps)', 'Carry-to-Vol',
-                                   'S&P', "Moody's", 'Fitch', 'Avg Rating', 'Z-Spread (bps)', 'Current Yield (%)']
+                                   'Peer Group', 'C/V Z-Score', 'Risk-Adj Signal',
+                                   'S&P', "Moody's", 'Fitch', 'Avg Rating',
+                                   'Z-Spread (bps)', 'Current Yield (%)']
+            
+            # Sort by C/V Z-Score (best risk-adjusted returns first)
+            display_ctv = display_ctv.sort_values('C/V Z-Score', ascending=False)
             
             st.dataframe(
                 display_ctv.style.format({
                     'Carry (bps)': '{:.0f}',
                     'Vol (bps)': '{:.0f}',
                     'Carry-to-Vol': '{:.3f}',
+                    'C/V Z-Score': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
                     'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
                     'Z-Spread (bps)': lambda x: f'{x:.1f}' if pd.notna(x) else 'N/A',
                     'Current Yield (%)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A'
-                }).background_gradient(subset=['Carry-to-Vol'], cmap='RdYlGn'),
+                }).background_gradient(subset=['C/V Z-Score'], cmap='RdYlGn', vmin=-2, vmax=2),
                 use_container_width=True,
                 height=500
             )
@@ -1005,6 +1119,20 @@ with tab2:
         - Carry: Current yield in basis points
         - Volatility: Annualized standard deviation of monthly z-spread changes (in bps) over 5 years
         - Ratio: Carry (bps) ÷ Volatility (bps)
+        
+        ---
+        
+        **Risk-Adjusted Signal (C/V Z-Score vs Peers)** shows risk-adjusted return quality relative to similar-rated sovereigns:
+        - **🟢 Excellent (z > 1.0)**: Carry-to-Vol >1 std dev HIGHER than peers - **superior risk-adjusted returns**
+        - **🟢 Good (0.5 < z < 1.0)**: Better risk-adjusted returns than peers
+        - **🟡 Average (-0.5 < z < 0.5)**: In-line with rating peers
+        - **🔴 Below Avg (-1.0 < z < -0.5)**: Worse risk-adjusted returns than peers
+        - **🔴 Poor (z < -1.0)**: Carry-to-Vol >1 std dev LOWER than peers - **inferior risk-adjusted returns**
+        
+        Countries are grouped by rating buckets (A, BBB, BB, B) and compared within their peer group.
+        **Higher C/V = More carry per unit of volatility = Better risk-adjusted returns**
+        
+        This metric answers: "Am I getting adequately compensated for the risk I'm taking compared to similar-rated credits?"
         """)
 
 # ============================================================================
