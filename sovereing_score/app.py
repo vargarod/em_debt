@@ -99,31 +99,51 @@ def load_data(selected_date):
     conn = get_db_connection()
     
     try:
-        # Query data for selected date
+        # Query data for selected date with 12-month momentum
         query = """
+        WITH month_end_dates AS (
+            -- Get all month-end dates
+            SELECT DISTINCT date
+            FROM securitized_research.emd_sovereign_score
+            WHERE EXTRACT(DAY FROM date + INTERVAL '1 day') = 1
+               OR date = (SELECT MAX(date) FROM securitized_research.emd_sovereign_score)
+            ORDER BY date DESC
+        ),
+        twelve_months_ago AS (
+            -- Get the month-end date closest to 12 months ago from selected date
+            SELECT date as past_date
+            FROM month_end_dates
+            WHERE date <= %s - INTERVAL '12 months'
+            ORDER BY date DESC
+            LIMIT 1
+        )
         SELECT 
-            country,
-            country_code,
-            moodys_rating,
-            moodys_outlook,
-            moodys_rat_date,
-            sp_rating,
-            sp_outlook,
-            st_rat_date,
-            fit_rating,
-            fit_outlook,
-            fit_rat_date,
-            avg_rating,
-            z_spread,
-            current_yield,
-            class,
-            date
-        FROM securitized_research.emd_sovereign_score
-        WHERE date = %s
-        ORDER BY country
+            curr.country,
+            curr.country_code,
+            curr.moodys_rating,
+            curr.moodys_outlook,
+            curr.moodys_rat_date,
+            curr.sp_rating,
+            curr.sp_outlook,
+            curr.st_rat_date,
+            curr.fit_rating,
+            curr.fit_outlook,
+            curr.fit_rat_date,
+            curr.avg_rating,
+            curr.z_spread,
+            curr.current_yield,
+            curr.class,
+            curr.date,
+            past.z_spread as z_spread_12m_ago
+        FROM securitized_research.emd_sovereign_score curr
+        LEFT JOIN securitized_research.emd_sovereign_score past
+            ON curr.country_code = past.country_code
+            AND past.date = (SELECT past_date FROM twelve_months_ago)
+        WHERE curr.date = %s
+        ORDER BY curr.country
         """
         
-        df = pd.read_sql(query, conn, params=(selected_date,))
+        df = pd.read_sql(query, conn, params=(selected_date, selected_date))
     finally:
         conn.close()
     
@@ -257,6 +277,37 @@ def load_data(selected_date):
             return '🔴 Very Rich'
     
     df['value_signal'] = df['spread_zscore'].apply(get_value_signal)
+    
+    # Calculate 12-month momentum (spread change)
+    # Positive momentum = spread tightening (good), Negative = spread widening (bad)
+    df['momentum_pct'] = np.where(
+        df['z_spread_12m_ago'].notna(),
+        ((df['z_spread_12m_ago'] - df['z_spread']) / df['z_spread_12m_ago'] * 100),
+        np.nan
+    )
+    
+    # Calculate percentile rank for momentum (only for countries with momentum data)
+    df['momentum_percentile'] = df['momentum_pct'].rank(pct=True, method='average') * 100
+    
+    # Assign momentum signal based on percentile ranking
+    def get_momentum_signal(row):
+        percentile = row['momentum_percentile']
+        momentum = row['momentum_pct']
+        
+        if pd.isna(momentum):
+            return '⚪ N/A'
+        elif percentile >= 80:
+            return '🟢 Strong Positive'
+        elif percentile >= 60:
+            return '🟢 Positive'
+        elif percentile >= 40:
+            return '🟡 Neutral'
+        elif percentile >= 20:
+            return '🔴 Negative'
+        else:
+            return '🔴 Strong Negative'
+    
+    df['momentum_signal'] = df.apply(get_momentum_signal, axis=1)
     
     return df, sp_to_num, selected_date
 
@@ -720,6 +771,7 @@ with tab1:
         'country', 'country_code', 'region', 'class', 
         'rating_for_score', 'sp_rating', 'moodys_rating', 'fit_rating',
         'avg_rating', 'rating_bucket', 'z_spread', 'spread_zscore', 'value_signal',
+        'momentum_pct', 'momentum_signal',
         'current_yield', 'avg_outlook'
     ]].copy()
 
@@ -727,10 +779,11 @@ with tab1:
         'Country', 'Code', 'Region', 'Class',
         'Rating (Chart)', 'S&P', "Moody's", 'Fitch',
         'Avg Rating', 'Peer Group', 'Z-Spread (bps)', 'Z-Score vs Peers', 'Value Signal',
+        '12M Momentum (%)', 'Momentum Signal',
         'Current Yield (%)', 'Outlook'
     ]
 
-    df_display = df_display.sort_values('Z-Score vs Peers', ascending=False)  # Highest (widest/cheapest) first
+    df_display = df_display.sort_values('12M Momentum (%)', ascending=False, na_position='last')  # Best momentum first
 
     # Display with formatting (handle NaN values in avg_rating)
     st.dataframe(
@@ -738,8 +791,10 @@ with tab1:
             'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
             'Z-Spread (bps)': '{:.2f}',
             'Z-Score vs Peers': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
+            '12M Momentum (%)': lambda x: f'{x:+.1f}%' if pd.notna(x) else 'N/A',
             'Current Yield (%)': '{:.3f}'
-        }).background_gradient(subset=['Z-Score vs Peers'], cmap='RdYlGn_r', vmin=-2, vmax=2),
+        }).background_gradient(subset=['Z-Score vs Peers'], cmap='RdYlGn_r', vmin=-2, vmax=2)
+          .background_gradient(subset=['12M Momentum (%)'], cmap='RdYlGn', vmin=-50, vmax=50),
         use_container_width=True,
         height=400
     )
@@ -781,17 +836,43 @@ with tab1:
     
     # Value signal interpretation
     st.markdown("---")
-    st.subheader("📖 Value Signal Guide")
-    st.markdown("""
-    **Z-Score vs Peers** measures how expensive/cheap a country trades relative to similar-rated sovereigns:
-    - **🟢 Very Cheap (z > 1.0)**: Spread >1 std dev WIDER than peers - **potential value opportunity**
-    - **🟢 Cheap (0.5 < z < 1.0)**: Spread wider than peers - may offer relative value
-    - **🟡 Fair (-0.5 < z < 0.5)**: Trading in-line with rating peers - fairly valued
-    - **🔴 Rich (-1.0 < z < -0.5)**: Spread tighter than peers - may be expensive
-    - **🔴 Very Rich (z < -1.0)**: Spread >1 std dev TIGHTER than peers - **potentially overvalued**
+    st.subheader("📖 Interpretation Guide")
     
-    Countries are grouped into peer buckets (A, BBB, BB, B) based on their average rating score.
-    **REMEMBER:** Wider spread (higher yield) = Cheap. Tighter spread (lower yield) = Rich.
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Z-Score vs Peers (Relative Value)**")
+        st.markdown("""
+        Measures how expensive/cheap a country trades relative to similar-rated sovereigns:
+        - **🟢 Very Cheap (z > 1.0)**: Spread >1σ WIDER than peers
+        - **🟢 Cheap (0.5 < z < 1.0)**: Spread wider than peers
+        - **🟡 Fair (-0.5 < z < 0.5)**: In-line with peers
+        - **🔴 Rich (-1.0 < z < -0.5)**: Spread tighter than peers
+        - **🔴 Very Rich (z < -1.0)**: Spread >1σ TIGHTER than peers
+        
+        Wider spread = higher yield = Cheap.
+        """)
+    
+    with col2:
+        st.markdown("**12-Month Momentum (Trend)**")
+        st.markdown("""
+        Measures spread change over past 12 months (month-end to month-end):
+        - **🟢 Strong Positive (≥80th %ile)**: Strong tightening trend
+        - **🟢 Positive (60-80th %ile)**: Moderate tightening
+        - **🟡 Neutral (40-60th %ile)**: Flat/mixed performance
+        - **🔴 Negative (20-40th %ile)**: Moderate widening
+        - **🔴 Strong Negative (≤20th %ile)**: Strong widening trend
+        
+        Positive % = tightening (good). Negative % = widening (bad).
+        """)
+    
+    st.markdown("""
+    ---
+    **Combined Signals:**
+    - **Best Opportunities**: 🟢 Cheap + 🟢 Positive Momentum (tightening with upside)
+    - **Contrarian Plays**: 🟢 Cheap + 🔴 Negative Momentum (catch falling knife)
+    - **Quality Holdings**: 🔴 Rich + 🟢 Positive Momentum (expensive but improving)
+    - **Avoid**: 🔴 Rich + 🔴 Negative Momentum (expensive + deteriorating)
     """)
 
 # ============================================================================
