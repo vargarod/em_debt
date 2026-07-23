@@ -385,6 +385,66 @@ class MacroRiskCalculator:
         
         return composite_normalized
     
+    def calculate_4factor_composite(self, factor_scores: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate 4-factor macro risk composite for country ranking
+        Uses: Govt Finance + External Balance + Intl Investment + Governance
+        Excludes: Growth, Inflation, Foreign Debt (more cyclical/volatile)
+        
+        Args:
+            factor_scores: DataFrame with individual factor scores
+            
+        Returns:
+            DataFrame with 4-factor MACRORISK composite
+        """
+        print("\nCalculating 4-factor composite macro risk score...")
+        
+        if factor_scores is None or len(factor_scores) == 0:
+            print("  Warning: No factor scores available to create composite")
+            return pd.DataFrame()
+        
+        # Select 4 structural factors
+        selected_factors = [
+            'GOVT_FINANCERISK',
+            'EXTERNAL_BALANCERISK', 
+            'INTL_INVESTMENTRISK',
+            'GOVERNANCERISK'
+        ]
+        
+        # Filter to only selected factors
+        factor_data = factor_scores[factor_scores['xcat'].isin(selected_factors)].copy()
+        
+        if len(factor_data) == 0:
+            print("  Warning: No selected factors found in data")
+            return pd.DataFrame()
+        
+        available_factors = factor_data['xcat'].unique().tolist()
+        print(f"  Using {len(available_factors)} factors: {', '.join(available_factors)}")
+        
+        # Equal weights for available factors
+        weights_list = [1.0 / len(available_factors)] * len(available_factors)
+        
+        # Get countries that have data
+        available_cids = factor_data['cid'].unique().tolist()
+        
+        # Calculate weighted composite
+        composite = msp.linear_composite(
+            factor_data,
+            xcats=available_factors,
+            cids=available_cids,
+            weights=weights_list,
+            normalize_weights=True,
+            complete_xcats=False,
+            new_xcat="MACRORISK_4FACTOR",
+        )
+        
+        # Re-normalize the composite score
+        composite_normalized = self.calculate_zscores(composite, "MACRORISK_4FACTOR")
+        
+        print(f"  [OK] Created MACRORISK_4FACTOR_ZN score")
+        
+        return composite_normalized
+    
     def process_all_scores(self, start_date: str = "2000-01-01",
                           countries: Optional[List[str]] = None) -> pd.DataFrame:
         """
@@ -411,14 +471,18 @@ class MacroRiskCalculator:
             print("\n[ERROR] No factor scores could be calculated")
             return pd.DataFrame()
         
-        # Step 3: Calculate composite score
+        # Step 3: Calculate composite scores (both equal-weight and 4-factor)
         composite_score = self.calculate_composite_score(factor_scores)
+        composite_4factor = self.calculate_4factor_composite(factor_scores)
         
         # Combine all scores
+        score_components = [factor_scores]
         if len(composite_score) > 0:
-            all_scores = pd.concat([factor_scores, composite_score], ignore_index=True)
-        else:
-            all_scores = factor_scores
+            score_components.append(composite_score)
+        if len(composite_4factor) > 0:
+            score_components.append(composite_4factor)
+        
+        all_scores = pd.concat(score_components, ignore_index=True)
         
         self.processed_data = all_scores
         
@@ -488,6 +552,7 @@ class MacroRiskCalculator:
             'GROWTHRISK': 'growth_risk_score',
             'INFLATIONRISK': 'inflation_risk_score',
             'MACRORISK_COMPOSITE_ZN': 'composite_macro_risk',
+            'MACRORISK_4FACTOR_ZN': 'composite_4factor_risk',
         }
         
         db_df = db_df.rename(columns=rename_map)

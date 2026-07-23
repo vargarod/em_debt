@@ -54,12 +54,21 @@ def explore_data(calculator, all_scores):
     # Composite score distribution
     if 'MACRORISK_COMPOSITE_ZN' in latest.columns:
         composite = latest['MACRORISK_COMPOSITE_ZN'].dropna()
-        print(f"\n2. COMPOSITE MACRO RISK SCORE DISTRIBUTION")
+        print(f"\n2. COMPOSITE MACRO RISK SCORE DISTRIBUTION (Equal-Weighted 7-Factor)")
         print(f"   Mean: {composite.mean():.3f}")
         print(f"   Median: {composite.median():.3f}")
         print(f"   Std Dev: {composite.std():.3f}")
         print(f"   Min: {composite.min():.3f} ({composite.idxmin()})")
         print(f"   Max: {composite.max():.3f} ({composite.idxmax()})")
+    
+    # 4-Factor composite distribution
+    if 'MACRORISK_4FACTOR_ZN' in latest.columns:
+        composite_4f = latest['MACRORISK_4FACTOR_ZN'].dropna()
+        print(f"\n   4-FACTOR COMPOSITE (Govt Finance + Ext Balance + Intl Invest + Governance)")
+        print(f"   Mean: {composite_4f.mean():.3f}")
+        print(f"   Median: {composite_4f.median():.3f}")
+        print(f"   Min: {composite_4f.min():.3f} ({composite_4f.idxmin()})")
+        print(f"   Max: {composite_4f.max():.3f} ({composite_4f.idxmax()})")
     
     # Risk level categories
     print(f"\n3. RISK LEVEL BREAKDOWN (Composite Score)")
@@ -126,7 +135,7 @@ def explore_data(calculator, all_scores):
     
     # Data completeness
     print(f"\n8. DATA COMPLETENESS (% of countries with data)")
-    for col in available_factors + ['MACRORISK_COMPOSITE_ZN']:
+    for col in available_factors + ['MACRORISK_COMPOSITE_ZN', 'MACRORISK_4FACTOR_ZN']:
         if col in latest.columns:
             pct_complete = (latest[col].notna().sum() / len(latest)) * 100
             print(f"   {col:30s} {pct_complete:5.1f}%")
@@ -161,6 +170,7 @@ def create_table(conn):
         
         -- Composite scores
         composite_macro_risk NUMERIC(10, 6),
+        composite_4factor_risk NUMERIC(10, 6),
         
         -- Metadata
         data_source VARCHAR(50) DEFAULT 'JPMaQS',
@@ -185,6 +195,9 @@ def create_table(conn):
     
     COMMENT ON COLUMN securitized_research.emd_jpmaqs_fundamental_scoring.composite_macro_risk IS 
         'Equal-weighted composite of 7 macro risk factors. Z-score normalized. Positive = higher risk.';
+    
+    COMMENT ON COLUMN securitized_research.emd_jpmaqs_fundamental_scoring.composite_4factor_risk IS 
+        '4-factor structural risk composite (Govt Finance + Ext Balance + Intl Investment + Governance). Z-score normalized. Positive = higher risk.';
     """
     
     cursor.execute(create_table_sql)
@@ -228,8 +241,8 @@ def upload_data(conn, db_df, as_of_date=None):
     (country_code, country_name, date, 
      govt_finance_score, external_balance_score, intl_investment_score, 
      foreign_debt_score, governance_score, growth_risk_score, 
-     inflation_risk_score, composite_macro_risk)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+     inflation_risk_score, composite_macro_risk, composite_4factor_risk)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     
     inserted_count = 0
@@ -247,6 +260,7 @@ def upload_data(conn, db_df, as_of_date=None):
                 row.get('growth_risk_score'),
                 row.get('inflation_risk_score'),
                 row.get('composite_macro_risk'),
+                row.get('composite_4factor_risk'),
             ))
             inserted_count += 1
         except Exception as e:
