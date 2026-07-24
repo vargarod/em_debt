@@ -1782,7 +1782,7 @@ with tab4:
                 
                 # Apply styling
                 score_cols = [c for c in display_df.columns if c not in ['Country', 'Region']]
-                styled_df = display_df.style.applymap(color_risk_score, subset=score_cols)\
+                styled_df = display_df.style.map(color_risk_score, subset=score_cols)\
                                            .format({col: '{:+.2f}' for col in score_cols}, na_rep='N/A')
                 
                 st.dataframe(styled_df, use_container_width=True, height=600)
@@ -2114,7 +2114,7 @@ with tab4:
                         else:
                             return 'background-color: #ccffcc'
                     
-                    styled_detail = detail_df.style.applymap(color_risk, subset=factor_names + ['7F Composite'])\
+                    styled_detail = detail_df.style.map(color_risk, subset=factor_names + ['7F Composite'])\
                                                   .format({col: '{:+.2f}' for col in factor_names + ['7F Composite']}, na_rep='N/A')
                     
                     st.dataframe(styled_detail, use_container_width=True)
