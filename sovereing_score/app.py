@@ -20,6 +20,9 @@ REGION_MAPPING = {
     'GUA': 'LatAM', 'DR': 'LatAM', 'PAR': 'LatAM', 'ESV': 'LatAM', 'VEN': 'LatAM',
     'BOL': 'LatAM', 'JAM': 'LatAM', 'T&T': 'LatAM', 'HON': 'LatAM', 'BAR': 'LatAM',
     'SUR': 'LatAM',
+    # LatAM - Currency codes (for JPMaQS)
+    'BRL': 'LatAM', 'CLP': 'LatAM', 'COP': 'LatAM', 'DOP': 'LatAM', 'MXN': 'LatAM',
+    'PEN': 'LatAM', 'UYU': 'LatAM',
     # EMEA
     'SAF': 'EMEA', 'TUR': 'EMEA', 'POL': 'EMEA', 'HUN': 'EMEA', 'ROM': 'EMEA',
     'CZE': 'EMEA', 'HRV': 'EMEA', 'BGR': 'EMEA', 'EGY': 'EMEA', 'MOR': 'EMEA',
@@ -30,11 +33,30 @@ REGION_MAPPING = {
     'LEB': 'EMEA', 'GAB': 'EMEA', 'AZE': 'EMEA', 'MOZ': 'EMEA', 'GEO': 'EMEA',
     'UZB': 'EMEA', 'ARM': 'EMEA', 'BEN': 'EMEA', 'RWA': 'EMEA', 'CAM': 'EMEA',
     'IRQ': 'EMEA', 'ZAM': 'EMEA',
+    # EMEA - Currency codes (for JPMaQS)
+    'HUF': 'EMEA', 'PLN': 'EMEA', 'RUB': 'EMEA', 'RSD': 'EMEA', 'TRY': 'EMEA',
+    'AED': 'EMEA', 'EGP': 'EMEA', 'NGN': 'EMEA', 'OMR': 'EMEA', 'QAR': 'EMEA',
+    'ZAR': 'EMEA', 'SAR': 'EMEA',
     # Asia
     'CHI': 'Asia', 'IND': 'Asia', 'IDO': 'Asia', 'THA': 'Asia', 'MAL': 'Asia',
     'PHI': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'SRL': 'Asia',
     'KOR': 'Asia', 'TWN': 'Asia', 'HKG': 'Asia', 'SGP': 'Asia', 'MAC': 'Asia',
     'MON': 'Asia', 'KHM': 'Asia', 'PAP': 'Asia',
+    # Asia - Currency codes (for JPMaQS)
+    'CNY': 'Asia', 'IDR': 'Asia', 'INR': 'Asia', 'PHP': 'Asia',
+}
+
+# Currency code to country code mapping (for JPMaQS data)
+CURRENCY_TO_COUNTRY = {
+    # LatAM
+    'BRL': 'BRZ', 'CLP': 'CHL', 'COP': 'COL', 'DOP': 'DR', 'MXN': 'MEX',
+    'PEN': 'PER', 'UYU': 'URU',
+    # EMEA
+    'HUF': 'HUN', 'PLN': 'POL', 'RUB': 'RUS', 'RSD': 'SER', 'TRY': 'TUR',
+    'AED': 'UAE', 'EGP': 'EGY', 'NGN': 'NIG', 'OMR': 'OMA', 'QAR': 'QAT',
+    'ZAR': 'SAF', 'SAR': 'KSA',
+    # Asia
+    'CNY': 'CHI', 'IDR': 'IDO', 'INR': 'IND', 'PHP': 'PHI',
 }
 
 # Database connection helper
@@ -99,7 +121,7 @@ def load_data(selected_date):
     conn = get_db_connection()
     
     try:
-        # Query data for selected date with 12-month momentum
+        # Query data for selected date with 3M, 6M, and 12M momentum
         query = """
         WITH month_end_dates AS (
             -- Get all month-end dates
@@ -108,6 +130,22 @@ def load_data(selected_date):
             WHERE EXTRACT(DAY FROM date + INTERVAL '1 day') = 1
                OR date = (SELECT MAX(date) FROM securitized_research.emd_sovereign_score)
             ORDER BY date DESC
+        ),
+        three_months_ago AS (
+            -- Get the month-end date closest to 3 months ago from selected date
+            SELECT date as past_date
+            FROM month_end_dates
+            WHERE date <= %s - INTERVAL '3 months'
+            ORDER BY date DESC
+            LIMIT 1
+        ),
+        six_months_ago AS (
+            -- Get the month-end date closest to 6 months ago from selected date
+            SELECT date as past_date
+            FROM month_end_dates
+            WHERE date <= %s - INTERVAL '6 months'
+            ORDER BY date DESC
+            LIMIT 1
         ),
         twelve_months_ago AS (
             -- Get the month-end date closest to 12 months ago from selected date
@@ -134,16 +172,24 @@ def load_data(selected_date):
             curr.current_yield,
             curr.class,
             curr.date,
-            past.z_spread as z_spread_12m_ago
+            past_3m.z_spread as z_spread_3m_ago,
+            past_6m.z_spread as z_spread_6m_ago,
+            past_12m.z_spread as z_spread_12m_ago
         FROM securitized_research.emd_sovereign_score curr
-        LEFT JOIN securitized_research.emd_sovereign_score past
-            ON curr.country_code = past.country_code
-            AND past.date = (SELECT past_date FROM twelve_months_ago)
+        LEFT JOIN securitized_research.emd_sovereign_score past_3m
+            ON curr.country_code = past_3m.country_code
+            AND past_3m.date = (SELECT past_date FROM three_months_ago)
+        LEFT JOIN securitized_research.emd_sovereign_score past_6m
+            ON curr.country_code = past_6m.country_code
+            AND past_6m.date = (SELECT past_date FROM six_months_ago)
+        LEFT JOIN securitized_research.emd_sovereign_score past_12m
+            ON curr.country_code = past_12m.country_code
+            AND past_12m.date = (SELECT past_date FROM twelve_months_ago)
         WHERE curr.date = %s
         ORDER BY curr.country
         """
         
-        df = pd.read_sql(query, conn, params=(selected_date, selected_date))
+        df = pd.read_sql(query, conn, params=(selected_date, selected_date, selected_date, selected_date))
     finally:
         conn.close()
     
@@ -278,36 +324,92 @@ def load_data(selected_date):
     
     df['value_signal'] = df['spread_zscore'].apply(get_value_signal)
     
-    # Calculate 12-month momentum (spread change)
+    # Calculate 3-month, 6-month, and 12-month momentum (spread change)
     # Positive momentum = spread tightening (good), Negative = spread widening (bad)
-    df['momentum_pct'] = np.where(
+    df['momentum_3m'] = np.where(
+        df['z_spread_3m_ago'].notna(),
+        ((df['z_spread_3m_ago'] - df['z_spread']) / df['z_spread_3m_ago'] * 100),
+        np.nan
+    )
+    
+    df['momentum_6m'] = np.where(
+        df['z_spread_6m_ago'].notna(),
+        ((df['z_spread_6m_ago'] - df['z_spread']) / df['z_spread_6m_ago'] * 100),
+        np.nan
+    )
+    
+    df['momentum_12m'] = np.where(
         df['z_spread_12m_ago'].notna(),
         ((df['z_spread_12m_ago'] - df['z_spread']) / df['z_spread_12m_ago'] * 100),
         np.nan
     )
     
-    # Calculate percentile rank for momentum (only for countries with momentum data)
-    df['momentum_percentile'] = df['momentum_pct'].rank(pct=True, method='average') * 100
+    # Calculate acceleration: is tightening speeding up or slowing down?
+    # Positive = accelerating tightening, Negative = decelerating/losing momentum
+    df['acceleration'] = df['momentum_3m'] - df['momentum_12m']
     
-    # Assign momentum signal based on percentile ranking
+    # Calculate percentile rank for 12M momentum (only for countries with momentum data)
+    df['momentum_percentile'] = df['momentum_12m'].rank(pct=True, method='average') * 100
+    
+    # Assign momentum signal based on percentile ranking and actual momentum direction
     def get_momentum_signal(row):
         percentile = row['momentum_percentile']
-        momentum = row['momentum_pct']
+        momentum = row['momentum_12m']
         
         if pd.isna(momentum):
             return '⚪ N/A'
         elif percentile >= 80:
-            return '🟢 Strong Positive'
-        elif percentile >= 60:
             return '🟢 Positive'
-        elif percentile >= 40:
-            return '🟡 Neutral'
-        elif percentile >= 20:
+        elif percentile <= 20 and momentum < 0:
             return '🔴 Negative'
         else:
-            return '🔴 Strong Negative'
+            return '🟡 Neutral'
     
     df['momentum_signal'] = df.apply(get_momentum_signal, axis=1)
+    
+    # Assign acceleration signal
+    def get_acceleration_signal(accel):
+        if pd.isna(accel):
+            return '⚪ N/A'
+        elif accel > 5:
+            return '🟢 Accelerating'
+        elif accel < -5:
+            return '🔴 Decelerating'
+        else:
+            return '🟡 Steady'
+    
+    df['acceleration_signal'] = df['acceleration'].apply(get_acceleration_signal)
+    
+    # Create forward-looking signal combining outlook + momentum
+    def get_forward_signal(row):
+        outlook = row['avg_outlook']
+        momentum_sig = row['momentum_signal']
+        accel_sig = row['acceleration_signal']
+        
+        # Positive Outlook + Positive Momentum = Very Positive
+        if outlook == 'Positive' and momentum_sig == '🟢 Positive':
+            return '🟢🟢 Very Positive'
+        # Negative Outlook + Negative Momentum = Very Negative
+        elif outlook == 'Negative' and momentum_sig == '🔴 Negative':
+            return '🔴🔴 Very Negative'
+        # Negative Outlook + Positive Momentum = Market ahead of agencies (opportunity)
+        elif outlook == 'Negative' and momentum_sig == '🟢 Positive':
+            return '🟢 Positive (Improving)'
+        # Positive Outlook + Negative Momentum = Conflicting signal
+        elif outlook == 'Positive' and momentum_sig == '🔴 Negative':
+            return '🟡 Mixed (Deteriorating)'
+        # Accelerating with any positive outlook
+        elif accel_sig == '🟢 Accelerating' and outlook in ['Positive', 'Stable']:
+            return '🟢 Positive'
+        # Otherwise neutral or stable
+        elif momentum_sig == '🟢 Positive':
+            return '🟢 Positive'
+        elif momentum_sig == '🔴 Negative':
+            return '🔴 Negative'
+        else:
+            return '🟡 Neutral'
+    
+    df['forward_signal'] = df.apply(get_forward_signal, axis=1)
     
     return df, sp_to_num, selected_date
 
@@ -470,7 +572,12 @@ show_outliers = st.sidebar.checkbox(
 st.title("🌍 EM Sovereign Credit Spread Analysis")
 
 # Create tabs
-tab1, tab2, tab3 = st.tabs(["📊 Sovereign Score", "📉 Carry-to-Vol", "📈 Historical Spread"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Sovereign Score", 
+    "📉 Carry-to-Vol", 
+    "📈 Historical Spread",
+    "🎯 Fundamental Risk"
+])
 
 # ============================================================================
 # TAB 1: SOVEREIGN SCORE (Current scatter plot)
@@ -771,7 +878,8 @@ with tab1:
         'country', 'country_code', 'region', 'class', 
         'rating_for_score', 'sp_rating', 'moodys_rating', 'fit_rating',
         'avg_rating', 'rating_bucket', 'z_spread', 'spread_zscore', 'value_signal',
-        'momentum_pct', 'momentum_signal',
+        'momentum_3m', 'momentum_6m', 'momentum_12m', 'acceleration', 
+        'momentum_signal', 'acceleration_signal', 'forward_signal',
         'current_yield', 'avg_outlook'
     ]].copy()
 
@@ -779,11 +887,12 @@ with tab1:
         'Country', 'Code', 'Region', 'Class',
         'Rating (Chart)', 'S&P', "Moody's", 'Fitch',
         'Avg Rating', 'Peer Group', 'Z-Spread (bps)', 'Z-Score vs Peers', 'Value Signal',
-        '12M Momentum (%)', 'Momentum Signal',
+        '3M Mom (%)', '6M Mom (%)', '12M Mom (%)', 'Accel', 
+        'Momentum', 'Acceleration', 'Forward Signal',
         'Current Yield (%)', 'Outlook'
     ]
 
-    df_display = df_display.sort_values('12M Momentum (%)', ascending=False, na_position='last')  # Best momentum first
+    df_display = df_display.sort_values('12M Mom (%)', ascending=False, na_position='last')  # Best momentum first
 
     # Display with formatting (handle NaN values in avg_rating)
     st.dataframe(
@@ -791,10 +900,14 @@ with tab1:
             'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
             'Z-Spread (bps)': '{:.2f}',
             'Z-Score vs Peers': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
-            '12M Momentum (%)': lambda x: f'{x:+.1f}%' if pd.notna(x) else 'N/A',
+            '3M Mom (%)': lambda x: f'{x:+.1f}%' if pd.notna(x) else 'N/A',
+            '6M Mom (%)': lambda x: f'{x:+.1f}%' if pd.notna(x) else 'N/A',
+            '12M Mom (%)': lambda x: f'{x:+.1f}%' if pd.notna(x) else 'N/A',
+            'Accel': lambda x: f'{x:+.1f}' if pd.notna(x) else 'N/A',
             'Current Yield (%)': '{:.3f}'
         }).background_gradient(subset=['Z-Score vs Peers'], cmap='RdYlGn_r', vmin=-2, vmax=2)
-          .background_gradient(subset=['12M Momentum (%)'], cmap='RdYlGn', vmin=-50, vmax=50),
+          .background_gradient(subset=['12M Mom (%)'], cmap='RdYlGn', vmin=-50, vmax=50)
+          .background_gradient(subset=['Accel'], cmap='RdYlGn', vmin=-10, vmax=10),
         use_container_width=True,
         height=400
     )
@@ -854,25 +967,55 @@ with tab1:
         """)
     
     with col2:
-        st.markdown("**12-Month Momentum (Trend)**")
+        st.markdown("**12-Month Momentum**")
         st.markdown("""
-        Measures spread change over past 12 months (month-end to month-end):
-        - **🟢 Strong Positive (≥80th %ile)**: Strong tightening trend
-        - **🟢 Positive (60-80th %ile)**: Moderate tightening
-        - **🟡 Neutral (40-60th %ile)**: Flat/mixed performance
-        - **🔴 Negative (20-40th %ile)**: Moderate widening
-        - **🔴 Strong Negative (≤20th %ile)**: Strong widening trend
+        Spread change over past 12 months (month-end to month-end):
+        - **🟢 Positive (≥80th %ile)**: Top 20% performers - strongest tightening
+        - **🟡 Neutral**: Middle performers or relative underperformers still tightening
+        - **🔴 Negative (≤20th %ile + widening)**: Bottom 20% + actual spread widening
         
-        Positive % = tightening (good). Negative % = widening (bad).
+        **Focuses on absolute deterioration, not relative underperformance.**
+        """)
+    
+    st.markdown("---")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown("**Acceleration Signal**")
+        st.markdown("""
+        Compares 3M vs 12M momentum to detect trend changes:
+        - **🟢 Accelerating (>+5)**: Tightening is speeding up (3M better than 12M)
+        - **🟡 Steady (±5)**: Consistent pace of change
+        - **🔴 Decelerating (<-5)**: Tightening is slowing or widening accelerating
+        
+        **Early warning for momentum shifts.** Positive acceleration = gaining momentum.
+        """)
+    
+    with col4:
+        st.markdown("**Forward Signal (Outlook + Momentum)**")
+        st.markdown("""
+        Combines rating agency outlook with market momentum:
+        - **🟢🟢 Very Positive**: Positive outlook + strong momentum (aligned bullish)
+        - **🟢 Positive**: Market improving (agencies may follow)
+        - **🟡 Mixed**: Conflicting signals between agencies and market
+        - **🔴 Negative**: Single warning flag
+        - **🔴🔴 Very Negative**: Negative outlook + widening (aligned bearish)
+        
+        **Best predictor when agencies and market align.**
         """)
     
     st.markdown("""
     ---
-    **Combined Signals:**
-    - **Best Opportunities**: 🟢 Cheap + 🟢 Positive Momentum (tightening with upside)
-    - **Contrarian Plays**: 🟢 Cheap + 🔴 Negative Momentum (catch falling knife)
-    - **Quality Holdings**: 🔴 Rich + 🟢 Positive Momentum (expensive but improving)
-    - **Avoid**: 🔴 Rich + 🔴 Negative Momentum (expensive + deteriorating)
+    **Investment Strategies:**
+    
+    | Strategy | Value Signal | Momentum Signal | Acceleration Signal | Forward Signal | Thesis |
+    |----------|--------------|-----------------|---------------------|----------------|--------|
+    | **High Conviction Buy** | 🟢 Cheap | 🟢 Positive | 🟢 Accelerating | 🟢🟢 Very Positive | Best setup - cheap + gaining momentum + agencies bullish |
+    | **Tactical Buy** | 🟢 Cheap | 🟢 Positive | Any | 🟡 Neutral/🟢 Positive | Good value + improving trend |
+    | **Watch/Hold** | 🟢 Cheap | 🟡 Neutral | 🟡 Steady | 🟡 Mixed | Value present but no catalyst yet |
+    | **Avoid** | 🟢 Cheap | 🔴 Negative | 🔴 Decelerating | 🔴 Negative | Value trap - deteriorating fundamentals |
+    | **Sell/Trim** | 🔴 Rich | 🔴 Negative | 🔴 Decelerating | 🔴🔴 Very Negative | Expensive + worsening - worst combination |
     """)
 
 # ============================================================================
@@ -1433,3 +1576,569 @@ with tab3:
                     height=400
                 )
 
+# ============================================================================
+# TAB 4: FUNDAMENTAL RISK (JPMaQS Macro Risk Scoring)
+# ============================================================================
+with tab4:
+    st.markdown("### Fundamental Macro Risk Scoring")
+    st.markdown("""
+    **Based on JPMaQS macro-quantamental indicators**  
+    Positive scores = Higher risk | Negative scores = Lower risk  
+    Z-score scale: -3 (very low risk) to +3 (very high risk)
+    """)
+    
+    # Load JPMaQS fundamental risk data
+    @st.cache_data(ttl=300)
+    def load_jpmaqs_data():
+        """Load latest JPMaQS fundamental risk scores with credit class from sovereign score table"""
+        conn = get_db_connection()
+        try:
+            # Build currency to country code mapping for SQL
+            currency_to_country_sql = "CASE j.country_code\n"
+            for currency, country in CURRENCY_TO_COUNTRY.items():
+                currency_to_country_sql += f"                WHEN '{currency}' THEN '{country}'\n"
+            currency_to_country_sql += "                ELSE j.country_code\n            END"
+            
+            query = f"""
+            WITH latest_jpmaqs AS (
+                SELECT MAX(date) as max_date 
+                FROM securitized_research.emd_jpmaqs_fundamental_scoring
+            ),
+            latest_sovereign AS (
+                SELECT MAX(date) as max_date
+                FROM securitized_research.emd_sovereign_score
+            )
+            SELECT 
+                j.country_code,
+                j.country_name,
+                j.date,
+                j.govt_finance_score,
+                j.external_balance_score,
+                j.intl_investment_score,
+                j.foreign_debt_score,
+                j.governance_score,
+                j.growth_risk_score,
+                j.inflation_risk_score,
+                j.composite_macro_risk,
+                j.composite_4factor_risk,
+                s.class,
+                s.avg_rating
+            FROM securitized_research.emd_jpmaqs_fundamental_scoring j
+            LEFT JOIN securitized_research.emd_sovereign_score s
+                ON {currency_to_country_sql} = s.country_code
+                AND s.date = (SELECT max_date FROM latest_sovereign)
+            WHERE j.date = (SELECT max_date FROM latest_jpmaqs)
+            ORDER BY j.composite_macro_risk DESC
+            """
+            df = pd.read_sql(query, conn)
+            df['date'] = pd.to_datetime(df['date'])
+        finally:
+            conn.close()
+        return df
+    
+    try:
+        df_jpmaqs = load_jpmaqs_data()
+        
+        if len(df_jpmaqs) == 0:
+            st.warning("No JPMaQS fundamental risk data available")
+        else:
+            # Add region mapping
+            df_jpmaqs['region'] = df_jpmaqs['country_code'].map(REGION_MAPPING)
+            
+            # Apply filters from sidebar
+            df_jpmaqs_filtered = df_jpmaqs.copy()
+            
+            # Filter by region
+            if len(regions) > 0 and len(regions) < 3:  # If not all regions selected
+                df_jpmaqs_filtered = df_jpmaqs_filtered[df_jpmaqs_filtered['region'].isin(regions)]
+            
+            # Filter by credit quality (IG/HY) - only if class data is available
+            if len(credit_quality) > 0 and len(credit_quality) < 2:  # If not both IG and HY selected
+                # Only filter rows where class is not null
+                has_class = df_jpmaqs_filtered['class'].notna()
+                if has_class.any():
+                    # Keep rows that either match the class filter OR have no class data
+                    df_jpmaqs_filtered = df_jpmaqs_filtered[
+                        (df_jpmaqs_filtered['class'].isin(credit_quality)) | 
+                        (~has_class)
+                    ]
+            
+            # Check if any data remains after filtering
+            if len(df_jpmaqs_filtered) == 0:
+                st.warning("⚠️ No countries match the selected filters. Please adjust the region or credit quality filters in the sidebar.")
+                st.stop()
+            
+            # Count how many countries have class data
+            countries_with_class = df_jpmaqs_filtered['class'].notna().sum()
+            
+            data_date = df_jpmaqs_filtered['date'].iloc[0]
+            info_msg = f"📅 **Data as of:** {data_date.strftime('%Y-%m-%d')} | **Countries:** {len(df_jpmaqs_filtered)}"
+            if len(df_jpmaqs_filtered) < len(df_jpmaqs):
+                info_msg += f" (filtered from {len(df_jpmaqs)} total)"
+            if countries_with_class < len(df_jpmaqs_filtered):
+                info_msg += f" | ⚠️ {len(df_jpmaqs_filtered) - countries_with_class} countries missing credit class data"
+            st.info(info_msg)
+            
+            # Metrics row
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                avg_composite = df_jpmaqs_filtered['composite_macro_risk'].mean()
+                st.metric("Avg Composite Risk", f"{avg_composite:+.2f}", 
+                         help="Equal-weighted 7-factor composite")
+            with col2:
+                safest = df_jpmaqs_filtered.nsmallest(1, 'composite_macro_risk').iloc[0]
+                # Determine color based on score: negative = green (low risk), positive = orange/red (high risk)
+                score = safest['composite_macro_risk']
+                if score < -0.5:
+                    color_emoji = "🟢"
+                elif score < 0.5:
+                    color_emoji = "🟡"
+                else:
+                    color_emoji = "🟠"
+                st.metric("Lowest Risk", 
+                         f"{color_emoji} {safest['country_name']}", 
+                         f"{score:+.2f}",
+                         delta_color="off")
+            with col3:
+                riskiest = df_jpmaqs_filtered.nlargest(1, 'composite_macro_risk').iloc[0]
+                # Determine color based on score: positive = red/orange (high risk)
+                score = riskiest['composite_macro_risk']
+                if score > 1.5:
+                    color_emoji = "🔴"
+                elif score > 0.5:
+                    color_emoji = "🟠"
+                else:
+                    color_emoji = "🟡"
+                st.metric("Highest Risk", 
+                         f"{color_emoji} {riskiest['country_name']}", 
+                         f"{score:+.2f}",
+                         delta_color="off")
+            with col4:
+                if 'composite_4factor_risk' in df_jpmaqs_filtered.columns:
+                    avg_4f = df_jpmaqs_filtered['composite_4factor_risk'].mean()
+                    st.metric("Avg 4-Factor Risk", f"{avg_4f:+.2f}",
+                             help="Structural factors only (Govt Finance + Ext Balance + Intl Invest + Governance)")
+            
+            st.markdown("---")
+            
+            # Filter controls
+            col_filter1, col_filter2 = st.columns(2)
+            with col_filter1:
+                view_mode = st.radio(
+                    "View Mode",
+                    ["All Factors", "Composite Scores", "Factor Decomposition"],
+                    horizontal=True
+                )
+            with col_filter2:
+                sort_by = st.selectbox(
+                    "Sort Countries By",
+                    ["Composite Risk (High→Low)", "Composite Risk (Low→High)", 
+                     "Country Name", "4-Factor Risk"],
+                    index=0
+                )
+            
+            # Apply sorting
+            if sort_by == "Composite Risk (High→Low)":
+                df_display = df_jpmaqs_filtered.sort_values('composite_macro_risk', ascending=False)
+            elif sort_by == "Composite Risk (Low→High)":
+                df_display = df_jpmaqs_filtered.sort_values('composite_macro_risk', ascending=True)
+            elif sort_by == "4-Factor Risk":
+                df_display = df_jpmaqs_filtered.sort_values('composite_4factor_risk', ascending=False)
+            else:
+                df_display = df_jpmaqs_filtered.sort_values('country_name')
+            
+            # ===== VIEW 1: ALL FACTORS TABLE =====
+            if view_mode == "All Factors":
+                st.subheader("📋 Factor Scores by Country")
+                
+                # Format display table
+                display_cols = ['country_name', 'region', 'govt_finance_score', 'external_balance_score',
+                               'intl_investment_score', 'foreign_debt_score', 'governance_score',
+                               'growth_risk_score', 'inflation_risk_score', 'composite_macro_risk']
+                
+                if 'composite_4factor_risk' in df_display.columns:
+                    display_cols.append('composite_4factor_risk')
+                
+                display_df = df_display[display_cols].copy()
+                display_df.columns = ['Country', 'Region', 'Govt Finance', 'Ext Balance', 
+                                     'Intl Invest', 'Foreign Debt', 'Governance', 
+                                     'Growth', 'Inflation', '7F Composite', '4F Composite'][:len(display_cols)]
+                
+                # Apply color formatting
+                def color_risk_score(val):
+                    """Color cells based on risk level"""
+                    if pd.isna(val):
+                        return 'background-color: #f0f0f0'
+                    elif val > 1.5:
+                        return 'background-color: #ffcccc; color: #990000; font-weight: bold'
+                    elif val > 0.5:
+                        return 'background-color: #ffe6cc; color: #cc6600'
+                    elif val > -0.5:
+                        return 'background-color: #ffffcc; color: #666600'
+                    elif val > -1.5:
+                        return 'background-color: #e6ffcc; color: #336600'
+                    else:
+                        return 'background-color: #ccffcc; color: #006600; font-weight: bold'
+                
+                # Apply styling
+                score_cols = [c for c in display_df.columns if c not in ['Country', 'Region']]
+                styled_df = display_df.style.applymap(color_risk_score, subset=score_cols)\
+                                           .format({col: '{:+.2f}' for col in score_cols}, na_rep='N/A')
+                
+                st.dataframe(styled_df, use_container_width=True, height=600)
+                
+                st.markdown("""
+                **Risk Levels:**  
+                🟢 Very Low (<-1.5) | 🟢 Low (-1.5 to -0.5) | 🟡 Average (-0.5 to +0.5) | 🟠 Elevated (+0.5 to +1.5) | 🔴 High (+1.5 to +2.5) | 🔴 Very High (>+2.5)
+                """)
+                
+                # Methodology explanation
+                with st.expander("📖 **Methodology & Factor Definitions**", expanded=False):
+                    st.markdown("""
+                    ### 🔬 **Statistical Methodology**
+                    
+                    **Z-Score Normalization:**
+                    - **Sequential (expanding window)**: No look-ahead bias - only uses historical data available at each point
+                    - **Minimum observations**: 783 days (~3 years) required for stable z-scores
+                    - **Panel-weighted**: Cross-country standardization ensures comparability
+                    - **Winsorized at ±3σ**: Extreme outliers capped to prevent distortion
+                    
+                    **Sign Alignment Convention:**
+                    - ✅ **Positive score = HIGHER risk** (for ALL factors)
+                    - ✅ **Negative score = LOWER risk** (for ALL factors)
+                    - This is achieved by negating indicators where "higher value = lower risk"
+                    
+                    **What does "negated" mean?**
+                    
+                    Some economic indicators naturally work backwards - higher values actually mean *lower* risk:
+                    - ✅ **Higher government surplus** = Lower fiscal risk (but raw value is positive)
+                    - ✅ **Higher current account surplus** = Lower external risk (but raw value is positive)
+                    - ✅ **Better governance** = Lower governance risk (but raw score is higher)
+                    - ✅ **Higher GDP growth** = Lower growth risk (but growth rate is positive)
+                    
+                    To maintain the **"positive = higher risk"** convention across ALL factors, we **multiply the z-score by -1** for these indicators. This sign flip ensures consistency:
+                    
+                    - **Original**: Country with +2.0 z-score for growth = Faster growth (good) → Should indicate *lower* risk
+                    - **After negation**: +2.0 × (-1) = **-2.0** → Now correctly shows lower risk ✅
+                    
+                    **Examples in practice:**
+                    - Brazil has strong growth → Growth z-score = -0.81 (negative = good, lower risk)
+                    - Brazil has fiscal deficit → Govt finance z-score = +1.62 (positive = bad, higher risk)
+                    
+                    Both scores now align: **Positive always means higher risk, negative always means lower risk.**
+                    
+                    ---
+                    
+                    ### 📊 **Individual Factor Definitions**
+                    
+                    *Note: Indicators marked "negated" have their signs flipped so positive = higher risk*
+                    
+                    #### 1️⃣ **Government Finance Risk**
+                    - **What it measures**: Fiscal sustainability (balance + debt levels)
+                    - **Indicators**: 
+                      - Government balance/GDP (current & next year) - *negated* (surplus is positive → flip to show lower risk)
+                      - Government debt/GDP (higher debt = higher risk, no negation needed)
+                    - **Weighting**: Equal weight (1/3 each)
+                    - **Sign logic**: After negation, higher deficit or debt = higher risk
+                    - **Example**: Brazil +1.62 = Large fiscal deficit, high debt
+                    
+                    #### 2️⃣ **External Balance Risk**
+                    - **What it measures**: Foreign exchange sustainability
+                    - **Indicators**: 
+                      - Current account balance/GDP (12M MA) - *negated* (surplus is positive → flip to show lower risk)
+                      - Trade balance/GDP (12M MA) - *negated* (surplus is positive → flip to show lower risk)
+                    - **Weighting**: Equal weight (0.5 each)
+                    - **Sign logic**: After negation, higher deficit = higher risk
+                    - **Example**: Egypt often has large current account deficits
+                    
+                    #### 3️⃣ **International Investment Risk**
+                    - **What it measures**: Net foreign asset position & vulnerability
+                    - **Indicators**: 
+                      - Net investment position/GDP changes (2Y & 5Y MA) - *negated* (improving position → flip to show lower risk)
+                      - Foreign liabilities/GDP changes (2Y & 5Y MA) (rising liabilities = higher risk, no negation)
+                    - **Weighting**: Equal weight (0.25 each)
+                    - **Sign logic**: After negation, worsening position or rising liabilities = higher risk
+                    
+                    #### 4️⃣ **Foreign Debt Risk**
+                    - **What it measures**: FX-denominated debt burden
+                    - **Indicators**: 
+                      - All FX debt/GDP (higher debt = higher risk, no negation)
+                      - Government FX debt/GDP (higher debt = higher risk, no negation)
+                    - **Weighting**: Equal weight (0.5 each)
+                    - **Sign logic**: Higher FX debt = higher risk (currency mismatch vulnerability)
+                    
+                    #### 5️⃣ **Governance Risk**
+                    - **What it measures**: Institutional quality & political stability
+                    - **Indicators**: 
+                      - Voice & accountability - *negated* (better governance = higher raw score → flip to show lower risk)
+                      - Political stability - *negated* (more stable = higher raw score → flip to show lower risk)
+                      - Corruption control - *negated* (less corrupt = higher raw score → flip to show lower risk)
+                    - **Weighting**: Equal weight (1/3 each)
+                    - **Sign logic**: After negation, weaker governance = higher risk
+                    - **Example**: Qatar -1.49 has strong governance (negative = good), Egypt +2.63 faces challenges (positive = bad)
+                    
+                    #### 6️⃣ **Growth Risk**
+                    - **What it measures**: Medium-term GDP growth trends
+                    - **Indicators**: 
+                      - Real GDP growth QoQ annualized (20Q MA & current) - *negated* (faster growth → flip to show lower risk)
+                    - **Weighting**: Equal weight (0.5 each)
+                    - **Sign logic**: After negation, lower growth = higher risk (debt sustainability concern)
+                    - **Example**: Brazil -0.81 = Strong recent growth (negative = good, lowers overall risk)
+                    
+                    #### 7️⃣ **Inflation Risk**
+                    - **What it measures**: Price stability deviation from target
+                    - **Indicators**: 
+                      - Headline CPI YoY (transformed, not negated)
+                      - Core CPI YoY (transformed, not negated)
+                    - **Weighting**: Equal weight (0.5 each)
+                    - **Sign logic**: Both HIGH and LOW inflation = higher risk (no negation - transformation handles directionality)
+                    - **Non-linear transformation**: `sqrt(|inflation - 2%|)` captures deviation from 2% target
+                    - **Example**: Turkey has persistently high inflation = elevated risk
+                    
+                    ---
+                    
+                    ### 🎯 **Composite Score Comparison**
+                    
+                    #### **7-Factor Composite (Equal-Weight)**
+                    - **Purpose**: Comprehensive risk assessment & **timing signals**
+                    - **Composition**: All 7 factors weighted equally (1/7 each)
+                    - **Use case**: 
+                      - Overall macro risk snapshot
+                      - Directional trading signals (risk-on/risk-off)
+                      - Identifying regime changes
+                    - **Includes cyclical factors**: Growth, Inflation, Foreign Debt
+                    - **Advantage**: Captures full risk picture including near-term dynamics
+                    
+                    #### **4-Factor Composite (Structural)**
+                    - **Purpose**: Structural risk & **cross-country comparison**
+                    - **Composition**: 
+                      - Govt Finance (25%)
+                      - External Balance (25%)
+                      - Intl Investment (25%)
+                      - Governance (25%)
+                    - **Use case**: 
+                      - Relative value analysis
+                      - Country rankings for allocation
+                      - Long-term sovereign credit quality
+                    - **Excludes**: Growth, Inflation, Foreign Debt (more volatile/cyclical)
+                    - **Advantage**: 
+                      - **Higher Sharpe ratio** for predicting sovereign spreads
+                      - More stable over time (less noise)
+                      - Better discriminator for cross-country relative value
+                      - Focuses on fundamental solvency metrics
+                    
+                    #### **Research Evidence (MacroSynergy)**
+                    Based on backtests analyzing EM sovereign spread returns:
+                    - 4-factor composite showed **stronger predictive power** for cross-sectional spread differences
+                    - Cyclical factors (growth, inflation) add noise to relative value comparisons
+                    - Structural factors better capture persistent credit quality differences
+                    - **Recommendation**: Use 7F for market timing, 4F for country selection
+                    
+                    ---
+                    
+                    ### 💡 **Practical Interpretation**
+                    
+                    **Example: Brazil (as of latest data)**
+                    - Govt Finance: +1.62 🔴 = Large fiscal challenges
+                    - External Balance: +0.31 🟡 = Modest current account deficit
+                    - Intl Investment: +0.44 🟡 = Manageable foreign position
+                    - Foreign Debt: +0.23 🟡 = Moderate FX debt
+                    - Governance: +0.71 🟠 = Institutional concerns
+                    - Growth: -0.81 🟢 = Strong growth offsets risk
+                    - Inflation: +0.78 🟠 = Above-target inflation
+                    - **7F Composite: +1.09 🟠** = Elevated overall risk
+                    - **4F Composite: +1.54 🔴** = High structural risk
+                    
+                    **Takeaway**: Brazil's growth momentum helps the 7F score, but structural fundamentals (4F) remain challenged by fiscal issues and governance.
+                    
+                    ---
+                    
+                    **Data Source**: [JPMaQS](https://macrosynergy.com/jpmaqs/) (JP Morgan Macrosynergy Quantamental System)  
+                    **Update Frequency**: Daily (automated via Task Scheduler)  
+                    **Historical Coverage**: 2020-01-01 to present (6-month lag for Dataquery tier)
+                    """)
+            
+            
+            # ===== VIEW 2: COMPOSITE SCORES =====
+            elif view_mode == "Composite Scores":
+                st.subheader("📊 Composite Risk Scores")
+                
+                col_chart1, col_chart2 = st.columns(2)
+                
+                with col_chart1:
+                    st.markdown("**7-Factor Equal-Weight Composite**")
+                    st.markdown("*Govt Finance + Ext Balance + Intl Invest + Foreign Debt + Governance + Growth + Inflation*")
+                    
+                    # Create horizontal bar chart for 7-factor
+                    fig_7f = go.Figure()
+                    
+                    df_plot = df_display.copy()
+                    colors_7f = df_plot['composite_macro_risk'].apply(
+                        lambda x: '#990000' if x > 1.5 else '#cc6600' if x > 0.5 else '#666600' if x > -0.5 else '#336600' if x > -1.5 else '#006600'
+                    )
+                    
+                    fig_7f.add_trace(go.Bar(
+                        y=df_plot['country_name'],
+                        x=df_plot['composite_macro_risk'],
+                        orientation='h',
+                        marker=dict(color=colors_7f),
+                        text=df_plot['composite_macro_risk'].apply(lambda x: f'{x:+.2f}'),
+                        textposition='outside',
+                        hovertemplate='<b>%{y}</b><br>Risk Score: %{x:+.2f}<extra></extra>'
+                    ))
+                    
+                    fig_7f.update_layout(
+                        xaxis_title="Risk Score",
+                        yaxis_title="",
+                        height=max(400, len(df_plot) * 20),
+                        showlegend=False,
+                        margin=dict(l=0, r=50, t=20, b=40)
+                    )
+                    
+                    # Add vertical lines for risk zones
+                    fig_7f.add_vline(x=0, line_dash="dash", line_color="gray", line_width=1)
+                    fig_7f.add_vline(x=0.5, line_dash="dot", line_color="orange", line_width=1, opacity=0.5)
+                    fig_7f.add_vline(x=-0.5, line_dash="dot", line_color="green", line_width=1, opacity=0.5)
+                    
+                    st.plotly_chart(fig_7f, use_container_width=True)
+                
+                with col_chart2:
+                    if 'composite_4factor_risk' in df_display.columns:
+                        st.markdown("**4-Factor Structural Composite**")
+                        st.markdown("*Govt Finance + Ext Balance + Intl Invest + Governance*")
+                        
+                        # Create horizontal bar chart for 4-factor
+                        fig_4f = go.Figure()
+                        
+                        df_plot_4f = df_display.dropna(subset=['composite_4factor_risk']).copy()
+                        colors_4f = df_plot_4f['composite_4factor_risk'].apply(
+                            lambda x: '#990000' if x > 1.5 else '#cc6600' if x > 0.5 else '#666600' if x > -0.5 else '#336600' if x > -1.5 else '#006600'
+                        )
+                        
+                        fig_4f.add_trace(go.Bar(
+                            y=df_plot_4f['country_name'],
+                            x=df_plot_4f['composite_4factor_risk'],
+                            orientation='h',
+                            marker=dict(color=colors_4f),
+                            text=df_plot_4f['composite_4factor_risk'].apply(lambda x: f'{x:+.2f}'),
+                            textposition='outside',
+                            hovertemplate='<b>%{y}</b><br>Risk Score: %{x:+.2f}<extra></extra>'
+                        ))
+                        
+                        fig_4f.update_layout(
+                            xaxis_title="Risk Score",
+                            yaxis_title="",
+                            height=max(400, len(df_plot_4f) * 20),
+                            showlegend=False,
+                            margin=dict(l=0, r=50, t=20, b=40)
+                        )
+                        
+                        # Add vertical lines
+                        fig_4f.add_vline(x=0, line_dash="dash", line_color="gray", line_width=1)
+                        fig_4f.add_vline(x=0.5, line_dash="dot", line_color="orange", line_width=1, opacity=0.5)
+                        fig_4f.add_vline(x=-0.5, line_dash="dot", line_color="green", line_width=1, opacity=0.5)
+                        
+                        st.plotly_chart(fig_4f, use_container_width=True)
+            
+            # ===== VIEW 3: FACTOR DECOMPOSITION =====
+            elif view_mode == "Factor Decomposition":
+                st.subheader("🔍 Individual Factor Breakdown")
+                
+                # Country selector for detailed view
+                selected_countries_jpmaqs = st.multiselect(
+                    "Select Countries for Comparison (max 10)",
+                    options=df_display['country_name'].tolist(),
+                    default=df_display['country_name'].head(5).tolist(),
+                    max_selections=10
+                )
+                
+                if len(selected_countries_jpmaqs) > 0:
+                    df_selected = df_display[df_display['country_name'].isin(selected_countries_jpmaqs)]
+                    
+                    # Prepare data for stacked bar chart
+                    factor_cols = ['govt_finance_score', 'external_balance_score', 'intl_investment_score',
+                                  'foreign_debt_score', 'governance_score', 'growth_risk_score', 'inflation_risk_score']
+                    factor_names = ['Govt Finance', 'Ext Balance', 'Intl Invest', 'Foreign Debt', 
+                                   'Governance', 'Growth', 'Inflation']
+                    
+                    # Create grouped bar chart
+                    fig_decomp = go.Figure()
+                    
+                    colors = ['#e74c3c', '#e67e22', '#f39c12', '#3498db', '#9b59b6', '#1abc9c', '#34495e']
+                    
+                    for i, (col, name) in enumerate(zip(factor_cols, factor_names)):
+                        fig_decomp.add_trace(go.Bar(
+                            name=name,
+                            x=df_selected['country_name'],
+                            y=df_selected[col],
+                            marker_color=colors[i],
+                            hovertemplate=f'<b>{name}</b><br>%{{y:+.2f}}<extra></extra>'
+                        ))
+                    
+                    fig_decomp.update_layout(
+                        barmode='group',
+                        title="Factor Risk Decomposition by Country",
+                        xaxis_title="",
+                        yaxis_title="Risk Score (Z-Score)",
+                        height=500,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        ),
+                        hovermode='closest'
+                    )
+                    
+                    # Add zero line
+                    fig_decomp.add_hline(y=0, line_dash="dash", line_color="gray", line_width=1)
+                    
+                    st.plotly_chart(fig_decomp, use_container_width=True)
+                    
+                    # Show data table for selected countries
+                    st.markdown("#### 📋 Detailed Factor Scores")
+                    detail_df = df_selected[['country_name', 'region'] + factor_cols + ['composite_macro_risk']].copy()
+                    detail_df.columns = ['Country', 'Region'] + factor_names + ['7F Composite']
+                    
+                    # Format and style
+                    def color_risk(val):
+                        if pd.isna(val):
+                            return ''
+                        elif val > 1.0:
+                            return 'background-color: #ffcccc'
+                        elif val > 0:
+                            return 'background-color: #ffe6cc'
+                        elif val > -1.0:
+                            return 'background-color: #e6ffcc'
+                        else:
+                            return 'background-color: #ccffcc'
+                    
+                    styled_detail = detail_df.style.applymap(color_risk, subset=factor_names + ['7F Composite'])\
+                                                  .format({col: '{:+.2f}' for col in factor_names + ['7F Composite']}, na_rep='N/A')
+                    
+                    st.dataframe(styled_detail, use_container_width=True)
+                    
+                    st.markdown("""
+                    **Factor Interpretation:**
+                    - **Govt Finance**: Fiscal balance and debt levels (surplus = lower risk, deficit = higher risk)
+                    - **Ext Balance**: Current account and trade balance (surplus = lower risk)
+                    - **Intl Investment**: Net investment position and foreign liabilities
+                    - **Foreign Debt**: FX-denominated debt burden
+                    - **Governance**: Political stability, accountability, corruption control
+                    - **Growth**: Medium-term GDP growth trends (higher growth = lower risk)
+                    - **Inflation**: Deviation from 2% target (both high and low = higher risk)
+                    """)
+                else:
+                    st.info("Please select at least one country to view factor decomposition")
+            
+            st.markdown("---")
+            st.markdown("""
+            **Data Source:** JPMaQS (Macro-Quantamental Signals) via MacroSynergy  
+            **Methodology:** Sequential z-score normalization, panel-weighted, winsorized at ±3σ  
+            **Interpretation:** Positive scores indicate higher fundamental risk; negative scores indicate lower risk
+            """)
+    
+    except Exception as e:
+        st.error(f"Error loading JPMaQS data: {e}")
+        st.info("Make sure the fundamental risk scoring data has been uploaded to the database.")

@@ -86,6 +86,25 @@ try {
     }
     Write-Log "PostgreSQL upload completed successfully"
     
+    # Step 3: Update JPMaQS Fundamental Risk Scores
+    Write-Log "=========================================="
+    Write-Log "Step 3: Updating JPMaQS fundamental scores..."
+    Write-Log "=========================================="
+    
+    $JPMaQSOutput = & $PythonExe upload_jpmaqs_scores.py 2>&1 | Out-String
+    $JPMaQSExitCode = $LASTEXITCODE
+    
+    # Log the output
+    $JPMaQSOutput -split "`n" | ForEach-Object { 
+        if ($_.Trim()) { Write-Log $_ }
+    }
+    
+    # Check for errors in output
+    if ($JPMaQSExitCode -ne 0 -or $JPMaQSOutput -match "ERROR|Error occurred|Traceback") {
+        throw "JPMaQS fundamental scores update failed - check logs for details"
+    }
+    Write-Log "JPMaQS fundamental scores updated successfully"
+    
     # Success
     Write-Log "=========================================="
     Write-Log "Daily update completed successfully!"
