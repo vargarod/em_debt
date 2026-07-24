@@ -296,7 +296,7 @@ def main():
     # Step 1: Calculate scores
     print("\nSTEP 1: Calculating macro risk scores...")
     calc = MacroRiskCalculator(
-        credentials_path=r"C:\Users\vargaro\Downloads\client_credentials.json"
+        credentials_path=r"client_credentials.json"
     )
     
     # Need at least 3-4 years for z-score calculation (min 783 daily obs)

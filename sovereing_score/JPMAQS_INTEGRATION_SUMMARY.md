@@ -205,7 +205,7 @@ All factors follow this convention:
 ## 📞 Support
 
 **Data Source**: JPMaQS via MacroSynergy  
-**Credentials**: `C:\Users\vargaro\Downloads\client_credentials.json`  
+**Credentials**: `sovereing_score/client_credentials.json`  
 **Database**: Azure PostgreSQL - `gwamdlquantapps-prod-postgresql-server`  
 **Schema**: `securitized_research`  
 **Table**: `emd_jpmaqs_fundamental_scoring`

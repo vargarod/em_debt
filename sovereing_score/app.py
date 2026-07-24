@@ -1687,12 +1687,32 @@ with tab4:
                          help="Equal-weighted 7-factor composite")
             with col2:
                 safest = df_jpmaqs_filtered.nsmallest(1, 'composite_macro_risk').iloc[0]
-                st.metric("Lowest Risk", f"{safest['country_name']}", 
-                         f"{safest['composite_macro_risk']:+.2f}")
+                # Determine color based on score: negative = green (low risk), positive = orange/red (high risk)
+                score = safest['composite_macro_risk']
+                if score < -0.5:
+                    color_emoji = "🟢"
+                elif score < 0.5:
+                    color_emoji = "🟡"
+                else:
+                    color_emoji = "🟠"
+                st.metric("Lowest Risk", 
+                         f"{color_emoji} {safest['country_name']}", 
+                         f"{score:+.2f}",
+                         delta_color="off")
             with col3:
                 riskiest = df_jpmaqs_filtered.nlargest(1, 'composite_macro_risk').iloc[0]
-                st.metric("Highest Risk", f"{riskiest['country_name']}", 
-                         f"{riskiest['composite_macro_risk']:+.2f}")
+                # Determine color based on score: positive = red/orange (high risk)
+                score = riskiest['composite_macro_risk']
+                if score > 1.5:
+                    color_emoji = "🔴"
+                elif score > 0.5:
+                    color_emoji = "🟠"
+                else:
+                    color_emoji = "🟡"
+                st.metric("Highest Risk", 
+                         f"{color_emoji} {riskiest['country_name']}", 
+                         f"{score:+.2f}",
+                         delta_color="off")
             with col4:
                 if 'composite_4factor_risk' in df_jpmaqs_filtered.columns:
                     avg_4f = df_jpmaqs_filtered['composite_4factor_risk'].mean()

@@ -571,7 +571,7 @@ def main():
     
     # Initialize calculator
     calc = MacroRiskCalculator(
-        credentials_path=r"C:\Users\vargaro\Downloads\client_credentials.json"
+        credentials_path=r"client_credentials.json"
     )
     
     # Process all scores (use recent data for speed)
