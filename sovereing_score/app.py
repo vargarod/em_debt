@@ -1024,8 +1024,26 @@ with tab1:
 with tab2:
     st.markdown("Carry-to-Volatility analysis: Current yield (bps) per unit of spread volatility (bps)")
     
-    # Load carry-to-vol data for latest month-end (2026-06-30)
-    ctv_as_of_date = '2026-06-30'
+    # Get latest carry-to-vol as_of_date from database
+    @st.cache_data(ttl=300)
+    def get_latest_ctv_date():
+        """Get the latest as_of_date from carry-to-vol table"""
+        conn = get_db_connection()
+        try:
+            query = "SELECT MAX(as_of_date) FROM securitized_research.emd_country_carry_to_vol"
+            result = pd.read_sql(query, conn)
+            latest_date = result.iloc[0, 0]
+            return latest_date.strftime('%Y-%m-%d') if latest_date else None
+        finally:
+            conn.close()
+    
+    ctv_as_of_date = get_latest_ctv_date()
+    
+    if not ctv_as_of_date:
+        st.warning("No carry-to-vol data available in database")
+        st.stop()
+    
+    # Load carry-to-vol data for latest available date
     df_ctv = load_carry_to_vol_data(ctv_as_of_date)
     
     if df_ctv.empty:
