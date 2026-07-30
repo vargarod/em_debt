@@ -99,8 +99,12 @@ try {
         if ($_.Trim()) { Write-Log $_ }
     }
     
-    # Check for errors in output
-    if ($JPMaQSExitCode -ne 0 -or $JPMaQSOutput -match "ERROR|Error occurred|Traceback") {
+    # Check for errors - only check exit code, ignore PowerShell stderr warnings
+    # Python script prints [SUCCESS] on successful completion
+    if ($JPMaQSExitCode -ne 0) {
+        throw "JPMaQS fundamental scores update failed with exit code $JPMaQSExitCode"
+    }
+    if ($JPMaQSOutput -match "\[ERROR\]|Error occurred:|Traceback \(most recent call last\)") {
         throw "JPMaQS fundamental scores update failed - check logs for details"
     }
     Write-Log "JPMaQS fundamental scores updated successfully"
