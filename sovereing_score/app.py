@@ -1288,7 +1288,7 @@ with tab2:
             
             # Update layout with rating scale annotations
             fig_ctv.update_layout(
-                title=f"Carry-to-Volatility vs. Credit Rating (as of {ctv_as_of_date})",
+                title=f"Carry-to-Volatility vs. Credit Rating",
                 xaxis_title="Average Rating Score",
                 yaxis_title="Carry-to-Vol (bps/bps)",
                 hovermode='closest',
@@ -1672,14 +1672,11 @@ with tab4:
             
             # Filter by credit quality (IG/HY) - only if class data is available
             if len(credit_quality) > 0 and len(credit_quality) < 2:  # If not both IG and HY selected
-                # Only filter rows where class is not null
-                has_class = df_jpmaqs_filtered['class'].notna()
-                if has_class.any():
-                    # Keep rows that either match the class filter OR have no class data
-                    df_jpmaqs_filtered = df_jpmaqs_filtered[
-                        (df_jpmaqs_filtered['class'].isin(credit_quality)) | 
-                        (~has_class)
-                    ]
+                # Only keep rows where class matches the filter
+                # Countries with missing class data will be excluded
+                df_jpmaqs_filtered = df_jpmaqs_filtered[
+                    df_jpmaqs_filtered['class'].isin(credit_quality)
+                ]
             
             # Check if any data remains after filtering
             if len(df_jpmaqs_filtered) == 0:
@@ -1770,7 +1767,7 @@ with tab4:
                 st.subheader("📋 Factor Scores by Country")
                 
                 # Format display table
-                display_cols = ['country_name', 'region', 'govt_finance_score', 'external_balance_score',
+                display_cols = ['country_name', 'region', 'class', 'govt_finance_score', 'external_balance_score',
                                'intl_investment_score', 'foreign_debt_score', 'governance_score',
                                'growth_risk_score', 'inflation_risk_score', 'composite_macro_risk']
                 
@@ -1778,7 +1775,7 @@ with tab4:
                     display_cols.append('composite_4factor_risk')
                 
                 display_df = df_display[display_cols].copy()
-                display_df.columns = ['Country', 'Region', 'Govt Finance', 'Ext Balance', 
+                display_df.columns = ['Country', 'Region', 'IG/HY', 'Govt Finance', 'Ext Balance', 
                                      'Intl Invest', 'Foreign Debt', 'Governance', 
                                      'Growth', 'Inflation', '7F Composite', '4F Composite'][:len(display_cols)]
                 
@@ -1799,7 +1796,7 @@ with tab4:
                         return 'background-color: #ccffcc; color: #006600; font-weight: bold'
                 
                 # Apply styling
-                score_cols = [c for c in display_df.columns if c not in ['Country', 'Region']]
+                score_cols = [c for c in display_df.columns if c not in ['Country', 'Region', 'IG/HY']]
                 styled_df = display_df.style.map(color_risk_score, subset=score_cols)\
                                            .format({col: '{:+.2f}' for col in score_cols}, na_rep='N/A')
                 

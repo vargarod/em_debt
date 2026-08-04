@@ -15,7 +15,7 @@ def fetch_historical_bql(reference_date_str):
     Fetch historical data using BQL rating() function
     
     Args:
-        reference_date_str: Date in YYYYMMDD format
+        reference_date_str: Date in YYYYMMDD or YYYY-MM-DD format
         
     Returns:
         DataFrame with historical data
@@ -23,8 +23,10 @@ def fetch_historical_bql(reference_date_str):
     from polars_bloomberg import BQuery
     import polars as pl
     
-    # Convert YYYYMMDD to YYYY-MM-DD
-    date_formatted = f"{reference_date_str[:4]}-{reference_date_str[4:6]}-{reference_date_str[6:8]}"
+    # Handle both YYYYMMDD and YYYY-MM-DD formats
+    # Remove any dashes first, then reformat
+    date_clean = reference_date_str.replace('-', '')
+    date_formatted = f"{date_clean[:4]}-{date_clean[4:6]}-{date_clean[6:8]}"
     
     print(f"\n{'='*80}")
     print(f"FETCHING HISTORICAL DATA FOR: {date_formatted}")
