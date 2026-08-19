@@ -34,7 +34,43 @@
 
 ---
 
-## 📋 Files to Commit to Repository
+## � Column Mapping in Data Table
+
+### Spread-Based C/V (Credit Focus)
+When **"Spread-Based (Credit Focus)"** is selected:
+
+| Column | Source | Description |
+|--------|--------|-------------|
+| **Carry (bps)** | `carry_bps` | Current yield × 100 |
+| **Vol Spread (bps)** | `vol_bps` | Annualized std dev of spread changes |
+| **📍 C/V (Spread)** | `carry_to_vol` | Carry ÷ Vol (PRIMARY METRIC) |
+| **C/V Z-Score (Spread)** | `ctv_zscore_spread` | Peer comparison within rating bucket |
+| Carry (%) | `carry_pct` | Current yield (secondary display) |
+| Vol Returns (%) | `vol_returns_annual` | Price return volatility (secondary display) |
+| C/V (Return) | `carry_to_vol_return_based` | Return-based C/V (secondary display) |
+
+### Return-Based C/V (Total Return Focus)  
+When **"Return-Based (Total Return Focus)"** is selected:
+
+| Column | Source | Description |
+|--------|--------|-------------|
+| **Carry (%)** | `carry_pct` | Current yield |
+| **Vol Returns (%)** | `vol_returns_annual` | Annualized std dev of price returns |
+| **📍 C/V (Return)** | `carry_to_vol_return_based` | Carry ÷ Vol (PRIMARY METRIC) |
+| **C/V Z-Score (Return)** | `ctv_zscore_return` | Peer comparison within rating bucket |
+| Carry (bps) | `carry_bps` | Current yield × 100 (secondary display) |
+| Vol Spread (bps) | `vol_bps` | Spread volatility (secondary display) |
+| C/V (Spread) | `carry_to_vol` | Spread-based C/V (secondary display) |
+
+**Key Changes:**
+- ✅ **Z-Score is now DYNAMIC** - Calculated separately for each perspective
+- ✅ **Sorting changes** - Table sorts by the selected metric's z-score
+- ✅ **Risk-Adj Signal changes** - Based on the selected metric's peer comparison
+- ✅ **Primary metrics highlighted** with 📍 emoji
+
+---
+
+## �📋 Files to Commit to Repository
 
 ### NEW FILES (9)
 

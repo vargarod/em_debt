@@ -479,10 +479,16 @@ def load_carry_to_vol_data(as_of_date):
         
         df['rating_bucket'] = df['avg_rating'].apply(get_rating_bucket)
         
-        # Calculate z-score for carry-to-vol within rating bucket
+        # Calculate z-score for SPREAD-BASED carry-to-vol within rating bucket
         # Positive z-score = better risk-adjusted returns than peers
         # Negative z-score = worse risk-adjusted returns than peers
-        df['ctv_zscore'] = df.groupby('rating_bucket')['carry_to_vol'].transform(
+        df['ctv_zscore_spread'] = df.groupby('rating_bucket')['carry_to_vol'].transform(
+            lambda x: (x - x.mean()) / x.std() if len(x) > 2 and x.std() > 0 else 0
+        )
+        
+        # Calculate z-score for RETURN-BASED carry-to-vol within rating bucket
+        # Only for countries that have return-based data
+        df['ctv_zscore_return'] = df.groupby('rating_bucket')['carry_to_vol_return_based'].transform(
             lambda x: (x - x.mean()) / x.std() if len(x) > 2 and x.std() > 0 else 0
         )
         
@@ -503,7 +509,9 @@ def load_carry_to_vol_data(as_of_date):
             else:
                 return '🔴 Poor'
         
-        df['ctv_value_signal'] = df['ctv_zscore'].apply(get_ctv_value_signal)
+        # Create signals for both perspectives
+        df['ctv_value_signal_spread'] = df['ctv_zscore_spread'].apply(get_ctv_value_signal)
+        df['ctv_value_signal_return'] = df['ctv_zscore_return'].apply(get_ctv_value_signal)
         
     finally:
         conn.close()
@@ -1367,6 +1375,16 @@ with tab2:
             # Data table
             st.subheader("📊 Carry-to-Vol Metrics by Country")
             
+            # Select appropriate z-score based on metric selection
+            if is_return_based:
+                df_ctv_filtered['ctv_zscore_display'] = df_ctv_filtered['ctv_zscore_return']
+                df_ctv_filtered['ctv_signal_display'] = df_ctv_filtered['ctv_value_signal_return']
+                z_score_label = 'C/V Z-Score (Return)'
+            else:
+                df_ctv_filtered['ctv_zscore_display'] = df_ctv_filtered['ctv_zscore_spread']
+                df_ctv_filtered['ctv_signal_display'] = df_ctv_filtered['ctv_value_signal_spread']
+                z_score_label = 'C/V Z-Score (Spread)'
+            
             # Build display columns dynamically based on metric type
             base_cols = ['country', 'country_code', 'region', 'class']
             
@@ -1385,19 +1403,19 @@ with tab2:
                             'Carry (bps)', 'Vol Spread (bps)', '📍 C/V (Spread)',
                             'Carry (%)', 'Vol Returns (%)', 'C/V (Return)']
             
-            rating_cols = ['rating_bucket', 'ctv_zscore', 'ctv_value_signal',
+            rating_cols = ['rating_bucket', 'ctv_zscore_display', 'ctv_signal_display',
                           'sp_rating', 'moodys_rating', 'fit_rating', 'avg_rating',
                           'z_spread', 'current_yield']
             
             display_ctv = df_ctv_filtered[base_cols + metric_cols + rating_cols].copy()
             
             display_ctv.columns = col_names + [
-                'Peer Group', 'C/V Z-Score', 'Risk-Adj Signal',
+                'Peer Group', z_score_label, 'Risk-Adj Signal',
                 'S&P', "Moody's", 'Fitch', 'Avg Rating',
                 'Z-Spread (bps)', 'Current Yield (%)']
             
-            # Sort by C/V Z-Score (best risk-adjusted returns first)
-            display_ctv = display_ctv.sort_values('C/V Z-Score', ascending=False)
+            # Sort by the SELECTED z-score (best risk-adjusted returns first)
+            display_ctv = display_ctv.sort_values(z_score_label, ascending=False)
             
             # Format dictionary
             format_dict = {
@@ -1409,7 +1427,7 @@ with tab2:
                 'Vol Returns (%)': lambda x: f'{x*100:.1f}' if pd.notna(x) else 'N/A',
                 '📍 C/V (Return)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A',
                 'C/V (Return)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A',
-                'C/V Z-Score': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
+                z_score_label: lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',  # Dynamic z-score label
                 'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
                 'Z-Spread (bps)': lambda x: f'{x:.1f}' if pd.notna(x) else 'N/A',
                 'Current Yield (%)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A'
@@ -1417,7 +1435,7 @@ with tab2:
             
             st.dataframe(
                 display_ctv.style.format(format_dict).background_gradient(
-                    subset=['C/V Z-Score'], cmap='RdYlGn', vmin=-2, vmax=2
+                    subset=[z_score_label], cmap='RdYlGn', vmin=-2, vmax=2  # Use selected z-score
                 ),
                 use_container_width=True,
                 height=500
