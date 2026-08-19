@@ -57,7 +57,7 @@ if record_count == 0:
 print(f"✓ Found {record_count} records in emd_sovereign_score for {as_of_date}")
 print()
 
-# Load computed metrics (Method 2: spread volatility)
+# Load computed metrics
 metrics_file = 'c:\\code\\em_debt\\sovereing_score\\carry_to_vol_comparison.csv'
 if not os.path.exists(metrics_file):
     print(f"ERROR: Metrics file not found: {metrics_file}")
@@ -66,18 +66,7 @@ if not os.path.exists(metrics_file):
 
 df = pd.read_csv(metrics_file)
 
-# Select only Method 2 columns
-df_method2 = df[['country', 'country_code', 'carry_bps', 'vol_spread_bps_annual', 
-                 'carry_to_vol_spread', 'data_points', 'date_range']].copy()
-
-# Rename for clarity
-df_method2.rename(columns={
-    'vol_spread_bps_annual': 'vol_bps',
-    'carry_to_vol_spread': 'carry_to_vol'
-}, inplace=True)
-
-print(f"✓ Loaded {len(df_method2)} records from {metrics_file}")
-print("  Using Method 2: Volatility of spread levels in bps")
+print(f"✓ Loaded {len(df)} records from {metrics_file}")
 print()
 
 # Connect to database
@@ -134,12 +123,17 @@ print()
 print("Inserting new metrics...")
 insert_sql = """
 INSERT INTO securitized_research.emd_country_carry_to_vol 
-    (country_code, as_of_date, country, carry_bps, vol_bps, carry_to_vol, data_points, date_range)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    (country_code, as_of_date, country, carry_bps, vol_bps, carry_to_vol, 
+     vol_returns_annual, carry_to_vol_return_based, data_points, date_range)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 inserted = 0
-for _, row in df_method2.iterrows():
+for _, row in df.iterrows():
+    # Handle NULL values for return-based metrics
+    vol_returns = row['vol_returns_annual'] if pd.notna(row['vol_returns_annual']) else None
+    ctv_return = row['carry_to_vol_return_based'] if pd.notna(row['carry_to_vol_return_based']) else None
+    
     cursor.execute(insert_sql, (
         row['country_code'],
         as_of_date,
@@ -147,6 +141,8 @@ for _, row in df_method2.iterrows():
         float(row['carry_bps']),
         float(row['vol_bps']),
         float(row['carry_to_vol']),
+        float(vol_returns) if vol_returns is not None else None,
+        float(ctv_return) if ctv_return is not None else None,
         int(row['data_points']),
         row['date_range']
     ))

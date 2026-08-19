@@ -432,6 +432,8 @@ def load_carry_to_vol_data(as_of_date):
             c.carry_bps,
             c.vol_bps,
             c.carry_to_vol,
+            c.vol_returns_annual,
+            c.carry_to_vol_return_based,
             c.data_points,
             c.as_of_date,
             s.sp_rating,
@@ -450,6 +452,10 @@ def load_carry_to_vol_data(as_of_date):
         """
         
         df = pd.read_sql(query, conn, params=(as_of_date,))
+        
+        # Calculate carry_pct for return-based display (if not already in data)
+        if 'carry_pct' not in df.columns:
+            df['carry_pct'] = df['carry_bps'] / 100.0
         
         # Add region mapping
         df['region'] = df['country_code'].map(REGION_MAPPING)
@@ -1022,7 +1028,18 @@ with tab1:
 # TAB 2: CARRY-TO-VOL ANALYSIS
 # ============================================================================
 with tab2:
-    st.markdown("Carry-to-Volatility analysis: Current yield (bps) per unit of spread volatility (bps)")
+    st.markdown("Carry-to-Volatility analysis: Assess risk-adjusted returns using two complementary perspectives")
+    
+    # Add toggle for selecting metric type
+    metric_type = st.radio(
+        "Select Carry-to-Vol Metric:",
+        options=["Spread-Based (Credit Focus)", "Return-Based (Total Return Focus)"],
+        help="Spread-Based uses spread volatility (credit risk); Return-Based uses price return volatility (total risk including rates)"
+    )
+    
+    is_return_based = (metric_type == "Return-Based (Total Return Focus)")
+    
+    st.markdown("---")
     
     # Get latest carry-to-vol as_of_date from database
     @st.cache_data(ttl=300)
@@ -1115,13 +1132,34 @@ with tab2:
         with col1:
             st.metric("Total Countries", len(df_ctv_filtered))
         with col2:
-            avg_ctv = df_ctv_filtered['carry_to_vol'].mean() if len(df_ctv_filtered) > 0 else 0
-            st.metric("Avg Carry-to-Vol", f"{avg_ctv:.2f}")
-        with col3:
-            if len(df_ctv_filtered) > 0:
-                st.metric("C/V Range", f"{df_ctv_filtered['carry_to_vol'].min():.2f} - {df_ctv_filtered['carry_to_vol'].max():.2f}")
+            # Select appropriate metric based on toggle
+            if is_return_based:
+                # Filter to only countries with return-based data
+                df_with_metric = df_ctv_filtered[df_ctv_filtered['carry_to_vol_return_based'].notna()]
+                avg_ctv = df_with_metric['carry_to_vol_return_based'].mean() if len(df_with_metric) > 0 else 0
+                st.metric("Avg Return-Based C/V", f"{avg_ctv:.3f}")
             else:
-                st.metric("C/V Range", "N/A")
+                avg_ctv = df_ctv_filtered['carry_to_vol'].mean() if len(df_ctv_filtered) > 0 else 0
+                st.metric("Avg Spread-Based C/V", f"{avg_ctv:.2f}")
+        with col3:
+            if is_return_based:
+                df_with_metric = df_ctv_filtered[df_ctv_filtered['carry_to_vol_return_based'].notna()]
+                if len(df_with_metric) > 0:
+                    st.metric("C/V Range", f"{df_with_metric['carry_to_vol_return_based'].min():.3f} - {df_with_metric['carry_to_vol_return_based'].max():.3f}")
+                else:
+                    st.metric("C/V Range", "N/A")
+            else:
+                if len(df_ctv_filtered) > 0:
+                    st.metric("C/V Range", f"{df_ctv_filtered['carry_to_vol'].min():.2f} - {df_ctv_filtered['carry_to_vol'].max():.2f}")
+                else:
+                    st.metric("C/V Range", "N/A")
+        
+        # Show warning if return-based selected but no data
+        if is_return_based:
+            df_with_metric = df_ctv_filtered[df_ctv_filtered['carry_to_vol_return_based'].notna()]
+            if len(df_with_metric) == 0:
+                st.warning("⚠ No return-based C/V data available. Sub-index price data may not be loaded yet. Showing spread-based metrics.")
+                is_return_based = False  # Fall back to spread-based
         
         if len(df_ctv_filtered) == 0:
             st.warning("No countries match the selected filters")
@@ -1207,9 +1245,16 @@ with tab2:
                 (~df_ctv_filtered['is_outlier'])
             ].copy()
             
+            # If return-based, also filter to only countries with return-based data
+            if is_return_based:
+                df_ctv_plottable = df_ctv_plottable[df_ctv_plottable['carry_to_vol_return_based'].notna()]
+            
+            # Select appropriate y-axis metric
+            y_metric = 'carry_to_vol_return_based' if is_return_based else 'carry_to_vol'
+            
             # Get all point coordinates for smart label positioning
             all_points_x = df_ctv_plottable['avg_rating'].values
-            all_points_y = df_ctv_plottable['carry_to_vol'].values
+            all_points_y = df_ctv_plottable[y_metric].values
             
             # Calculate optimal text positions
             text_positions = get_ctv_text_positions(df_ctv_plottable, all_points_x, all_points_y)
@@ -1220,14 +1265,14 @@ with tab2:
             # Add scatter points
             fig_ctv.add_trace(go.Scatter(
                 x=df_ctv_plottable['avg_rating'],
-                y=df_ctv_plottable['carry_to_vol'],
+                y=df_ctv_plottable[y_metric],
                 mode='markers+text',
                 text=df_ctv_plottable['country_code'],
                 textposition=text_positions,
                 textfont=dict(size=12),
                 marker=dict(
                     size=10,
-                    color=df_ctv_plottable['carry_to_vol'],
+                    color=df_ctv_plottable[y_metric],
                     colorscale='RdYlGn',
                     colorbar=dict(title="Carry-to-Vol"),
                     showscale=True
@@ -1237,8 +1282,8 @@ with tab2:
                     df_ctv_plottable['sp_rating'].fillna('N/A'),
                     df_ctv_plottable['moodys_rating'].fillna('N/A'),
                     df_ctv_plottable['fit_rating'].fillna('N/A'),
-                    df_ctv_plottable['carry_bps'],
-                    df_ctv_plottable['vol_bps'],
+                    df_ctv_plottable['carry_bps'] if not is_return_based else df_ctv_plottable['carry_pct'],
+                    df_ctv_plottable['vol_bps'] if not is_return_based else (df_ctv_plottable['vol_returns_annual'] * 100),
                     df_ctv_plottable['z_spread'].fillna(0),
                     df_ctv_plottable['current_yield'].fillna(0),
                     df_ctv_plottable['region'].fillna('N/A'),
@@ -1246,10 +1291,10 @@ with tab2:
                 )),
                 hovertemplate='<b>%{customdata[0]}</b> (%{text})<br>' +
                              'Avg Rating: %{x:.2f}<br>' +
-                             'Carry-to-Vol: %{y:.3f}<br>' +
+                             ('Carry-to-Vol (Return): %{y:.3f}<br>' if is_return_based else 'Carry-to-Vol (Spread): %{y:.3f}<br>') +
                              '<br>' +
-                             'Carry: %{customdata[4]:.0f} bps<br>' +
-                             'Volatility: %{customdata[5]:.0f} bps<br>' +
+                             ('Carry: %{customdata[4]:.2f}%<br>' if is_return_based else 'Carry: %{customdata[4]:.0f} bps<br>') +
+                             ('Volatility: %{customdata[5]:.1f}%<br>' if is_return_based else 'Volatility: %{customdata[5]:.0f} bps<br>') +
                              'Z-Spread: %{customdata[6]:.1f} bps<br>' +
                              'Current Yield: %{customdata[7]:.3f}%<br>' +
                              '<br>' +
@@ -1264,7 +1309,7 @@ with tab2:
             # Add fitted curve
             if len(df_ctv_plottable) > 5:
                 X = df_ctv_plottable['avg_rating'].values.reshape(-1, 1)
-                y = df_ctv_plottable['carry_to_vol'].values
+                y = df_ctv_plottable[y_metric].values
                 
                 # Fit polynomial regression (degree 2)
                 poly = PolynomialFeatures(degree=2)
@@ -1287,10 +1332,13 @@ with tab2:
                 ))
             
             # Update layout with rating scale annotations
+            y_axis_label = "Carry-to-Vol (%/%)" if is_return_based else "Carry-to-Vol (bps/bps)"
+            title_suffix = "(Return-Based)" if is_return_based else "(Spread-Based)"
+            
             fig_ctv.update_layout(
-                title=f"Carry-to-Volatility vs. Credit Rating",
+                title=f"Carry-to-Volatility vs. Credit Rating {title_suffix}",
                 xaxis_title="Average Rating Score",
-                yaxis_title="Carry-to-Vol (bps/bps)",
+                yaxis_title=y_axis_label,
                 hovermode='closest',
                 height=600,
                 xaxis=dict(
@@ -1319,30 +1367,58 @@ with tab2:
             # Data table
             st.subheader("📊 Carry-to-Vol Metrics by Country")
             
-            display_ctv = df_ctv_filtered[['country', 'country_code', 'region', 'class', 
-                                            'carry_bps', 'vol_bps', 'carry_to_vol', 'rating_bucket',
-                                            'ctv_zscore', 'ctv_value_signal',
-                                            'sp_rating', 'moodys_rating', 'fit_rating', 'avg_rating',
-                                            'z_spread', 'current_yield']].copy()
+            # Build display columns dynamically based on metric type
+            base_cols = ['country', 'country_code', 'region', 'class']
             
-            display_ctv.columns = ['Country', 'Code', 'Region', 'Class', 'Carry (bps)', 'Vol (bps)', 'Carry-to-Vol',
-                                   'Peer Group', 'C/V Z-Score', 'Risk-Adj Signal',
-                                   'S&P', "Moody's", 'Fitch', 'Avg Rating',
-                                   'Z-Spread (bps)', 'Current Yield (%)']
+            if is_return_based:
+                # Show return-based metrics prominently
+                metric_cols = ['carry_pct', 'vol_returns_annual', 'carry_to_vol_return_based',
+                              'carry_bps', 'vol_bps', 'carry_to_vol']
+                col_names = ['Country', 'Code', 'Region', 'Class',
+                            'Carry (%)', 'Vol Returns (%)', '📍 C/V (Return)',
+                            'Carry (bps)', 'Vol Spread (bps)', 'C/V (Spread)']
+            else:
+                # Show spread-based metrics prominently
+                metric_cols = ['carry_bps', 'vol_bps', 'carry_to_vol',
+                              'carry_pct', 'vol_returns_annual', 'carry_to_vol_return_based']
+                col_names = ['Country', 'Code', 'Region', 'Class',
+                            'Carry (bps)', 'Vol Spread (bps)', '📍 C/V (Spread)',
+                            'Carry (%)', 'Vol Returns (%)', 'C/V (Return)']
+            
+            rating_cols = ['rating_bucket', 'ctv_zscore', 'ctv_value_signal',
+                          'sp_rating', 'moodys_rating', 'fit_rating', 'avg_rating',
+                          'z_spread', 'current_yield']
+            
+            display_ctv = df_ctv_filtered[base_cols + metric_cols + rating_cols].copy()
+            
+            display_ctv.columns = col_names + [
+                'Peer Group', 'C/V Z-Score', 'Risk-Adj Signal',
+                'S&P', "Moody's", 'Fitch', 'Avg Rating',
+                'Z-Spread (bps)', 'Current Yield (%)']
             
             # Sort by C/V Z-Score (best risk-adjusted returns first)
             display_ctv = display_ctv.sort_values('C/V Z-Score', ascending=False)
             
+            # Format dictionary
+            format_dict = {
+                'Carry (bps)': '{:.0f}',
+                'Vol Spread (bps)': '{:.0f}',
+                '📍 C/V (Spread)': '{:.3f}',
+                'C/V (Spread)': '{:.3f}',
+                'Carry (%)': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
+                'Vol Returns (%)': lambda x: f'{x*100:.1f}' if pd.notna(x) else 'N/A',
+                '📍 C/V (Return)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A',
+                'C/V (Return)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A',
+                'C/V Z-Score': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
+                'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
+                'Z-Spread (bps)': lambda x: f'{x:.1f}' if pd.notna(x) else 'N/A',
+                'Current Yield (%)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A'
+            }
+            
             st.dataframe(
-                display_ctv.style.format({
-                    'Carry (bps)': '{:.0f}',
-                    'Vol (bps)': '{:.0f}',
-                    'Carry-to-Vol': '{:.3f}',
-                    'C/V Z-Score': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
-                    'Avg Rating': lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A',
-                    'Z-Spread (bps)': lambda x: f'{x:.1f}' if pd.notna(x) else 'N/A',
-                    'Current Yield (%)': lambda x: f'{x:.3f}' if pd.notna(x) else 'N/A'
-                }).background_gradient(subset=['C/V Z-Score'], cmap='RdYlGn', vmin=-2, vmax=2),
+                display_ctv.style.format(format_dict).background_gradient(
+                    subset=['C/V Z-Score'], cmap='RdYlGn', vmin=-2, vmax=2
+                ),
                 use_container_width=True,
                 height=500
             )
@@ -1350,31 +1426,108 @@ with tab2:
         # Interpretation guide
         st.markdown("---")
         st.subheader("📖 Interpretation Guide")
+        
+        st.markdown("### Two Complementary Perspectives on Carry-to-Volatility")
+        
+        col_guide1, col_guide2 = st.columns(2)
+        
+        with col_guide1:
+            st.markdown("""
+            **🔷 SPREAD-BASED C/V (bps/bps)**  
+            *Credit Risk Focus*
+            
+            **Formula:** Carry (bps) ÷ Volatility of Spread Changes (bps)
+            
+            **What it measures:**
+            - Risk-adjusted carry from **credit risk only**
+            - Isolates spread movements (credit quality changes)
+            - Ignores duration and interest rate risk
+            
+            **Typical Range:** 2.0 to 12.0
+            - **High (>7.0):** Excellent - stable credit spreads relative to yield
+            - **Medium (3.0-7.0):** Moderate risk-adjusted carry
+            - **Low (<3.0):** Weak - volatile spreads relative to yield
+            
+            **Best For:**
+            - Credit traders and EM debt specialists
+            - Spread compression/widening strategies
+            - Credit relative value analysis
+            - Comparing credit risk across sovereigns
+            
+            **Methodology:**
+            - Carry: Current yield × 100 (in bps)
+            - Volatility: Annualized std dev of monthly z-spread changes (5yr)
+            - Industry standard for fixed income credit products
+            """)
+        
+        with col_guide2:
+            st.markdown("""
+            **🔶 RETURN-BASED C/V (%/%)**  
+            *Total Return Focus*
+            
+            **Formula:** Carry (%) ÷ Volatility of Price Index Returns (%)
+            
+            **What it measures:**
+            - Risk-adjusted carry from **total risk**
+            - Captures spread risk + duration risk + rate risk
+            - Similar to Sharpe ratio for EM debt
+            
+            **Typical Range:** 0.1 to 0.5
+            - **High (>0.3):** Good risk-adjusted total return
+            - **Medium (0.15-0.3):** Moderate total return profile
+            - **Low (<0.15):** Weak risk-adjusted returns
+            
+            **Best For:**
+            - Portfolio managers and asset allocators
+            - Multi-asset investors
+            - Total return strategies
+            - Portfolio construction and optimization
+            
+            **Methodology:**
+            - Carry: Current yield (in %)
+            - Volatility: Annualized std dev of monthly price returns (5yr)
+            - Based on JP Morgan EMBIG sub-index prices
+            """)
+        
+        st.markdown("---")
         st.markdown("""
-        **Carry-to-Volatility Ratio** measures how many basis points of carry (current yield) you earn per unit of spread volatility (risk).
+        ### 🎯 When to Use Each Metric
         
-        - **High C/V (>7.0)**: Strong risk-adjusted carry - stable spreads relative to yield
-        - **Medium C/V (3.0-7.0)**: Moderate risk-adjusted carry
-        - **Low C/V (<3.0)**: Weak risk-adjusted carry - volatile spreads relative to yield
+        | **Use Case** | **Recommended Metric** | **Why** |
+        |-------------|------------------------|---------|
+        | Credit trading / spread bets | Spread-Based | Isolates credit risk movements |
+        | Portfolio construction | Return-Based | Captures total volatility including rates |
+        | EM debt fund management | Return-Based | Aligns with total return objectives |
+        | Credit relative value | Spread-Based | Pure credit comparison |
+        | Multi-asset allocation | Return-Based | Comparable to equity Sharpe ratios |
+        | Tactical spread positioning | Spread-Based | Focuses on credit-specific drivers |
         
-        **Methodology:**
-        - Carry: Current yield in basis points
-        - Volatility: Annualized standard deviation of monthly z-spread changes (in bps) over 5 years
-        - Ratio: Carry (bps) ÷ Volatility (bps)
+        ### 🔍 Using Both Together
+        
+        **High Return Vol but Low Spread Vol** → Rate-driven volatility  
+        - Country is sensitive to global rates/duration
+        - Credit fundamentals are stable
+        - Consider for carry strategies in stable rate environments
+        
+        **High Spread Vol but Lower Return Vol** → Credit-driven volatility  
+        - Spread movements dominate total returns
+        - Active credit risk management critical
+        - Suitable for credit hedging strategies
+        
+        **Both metrics high** → Attractive across perspectives
+        - Good carry compensation for all risk types
+        - Suitable for both tactical and strategic positions
         
         ---
         
-        **Risk-Adjusted Signal (C/V Z-Score vs Peers)** shows risk-adjusted return quality relative to similar-rated sovereigns:
-        - **🟢 Excellent (z > 1.0)**: Carry-to-Vol >1 std dev HIGHER than peers - **superior risk-adjusted returns**
-        - **🟢 Good (0.5 < z < 1.0)**: Better risk-adjusted returns than peers
-        - **🟡 Average (-0.5 < z < 0.5)**: In-line with rating peers
-        - **🔴 Below Avg (-1.0 < z < -0.5)**: Worse risk-adjusted returns than peers
-        - **🔴 Poor (z < -1.0)**: Carry-to-Vol >1 std dev LOWER than peers - **inferior risk-adjusted returns**
+        **Risk-Adjusted Signal (C/V Z-Score vs Peers)** shows quality relative to similar-rated sovereigns:
+        - **🟢 Excellent (z > 1.0):** Carry-to-Vol >1 std dev HIGHER than peers
+        - **🟢 Good (0.5 < z < 1.0):** Better risk-adjusted returns than peers
+        - **🟡 Average (-0.5 < z < 0.5):** In-line with rating peers
+        - **🔴 Below Avg (-1.0 < z < -0.5):** Worse than peers
+        - **🔴 Poor (z < -1.0):** Carry-to-Vol >1 std dev LOWER than peers
         
-        Countries are grouped by rating buckets (A, BBB, BB, B) and compared within their peer group.
-        **Higher C/V = More carry per unit of volatility = Better risk-adjusted returns**
-        
-        This metric answers: "Am I getting adequately compensated for the risk I'm taking compared to similar-rated credits?"
+        Countries grouped by rating buckets (A, BBB, BB, B) and compared within peer group.
         """)
 
 # ============================================================================

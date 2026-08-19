@@ -86,6 +86,40 @@ try {
     }
     Write-Log "PostgreSQL upload completed successfully"
     
+    # Step 2.5: Fetch and upload sub-index prices
+    Write-Log "=========================================="
+    Write-Log "Step 2.5: Fetching sub-index prices from Bloomberg..."
+    Write-Log "=========================================="
+    
+    $SubIndexFetchOutput = & $PythonExe fetch_sub_index_prices.py 2>&1 | Out-String
+    $SubIndexFetchExitCode = $LASTEXITCODE
+    
+    # Log the output
+    $SubIndexFetchOutput -split "`n" | ForEach-Object { 
+        if ($_.Trim()) { Write-Log $_ }
+    }
+    
+    # Check for errors
+    if ($SubIndexFetchExitCode -ne 0 -or $SubIndexFetchOutput -match "ERROR|Error occurred|Traceback") {
+        throw "Sub-index prices fetch failed - check logs for details"
+    }
+    Write-Log "Sub-index prices fetch completed successfully"
+    
+    Write-Log "Uploading sub-index prices to PostgreSQL..."
+    $SubIndexUploadOutput = & $PythonExe upload_sub_index_prices.py 2>&1 | Out-String
+    $SubIndexUploadExitCode = $LASTEXITCODE
+    
+    # Log the output
+    $SubIndexUploadOutput -split "`n" | ForEach-Object { 
+        if ($_.Trim()) { Write-Log $_ }
+    }
+    
+    # Check for errors
+    if ($SubIndexUploadExitCode -ne 0 -or $SubIndexUploadOutput -match "ERROR|Error occurred|Traceback") {
+        throw "Sub-index prices upload failed - check logs for details"
+    }
+    Write-Log "Sub-index prices upload completed successfully"
+    
     # Step 3: Update JPMaQS Fundamental Risk Scores
     Write-Log "=========================================="
     Write-Log "Step 3: Updating JPMaQS fundamental scores..."
