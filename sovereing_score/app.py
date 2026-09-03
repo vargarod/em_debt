@@ -8,6 +8,7 @@ import os
 import psycopg2
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from em_economic_tab import render_em_economic_tab
 
 # Page config
 st.set_page_config(page_title="EM Sovereign Credit Spread Analysis", layout="wide")
@@ -586,11 +587,12 @@ show_outliers = st.sidebar.checkbox(
 st.title("🌍 EM Sovereign Credit Spread Analysis")
 
 # Create tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Sovereign Score", 
     "📉 Carry-to-Vol", 
     "📈 Historical Spread",
-    "🎯 Fundamental Risk"
+    "🎯 Fundamental Risk",
+    "💰 EM Economic Data"
 ])
 
 # ============================================================================
@@ -2328,3 +2330,9 @@ with tab4:
     except Exception as e:
         st.error(f"Error loading JPMaQS data: {e}")
         st.info("Make sure the fundamental risk scoring data has been uploaded to the database.")
+
+# ============================================================================
+# TAB 5: EM ECONOMIC DATA
+# ============================================================================
+with tab5:
+    render_em_economic_tab()

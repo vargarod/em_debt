@@ -61,8 +61,8 @@ try {
         if ($_.Trim()) { Write-Log $_ }
     }
     
-    # Check for errors in output
-    if ($FetchExitCode -ne 0 -or $FetchOutput -match "ERROR|Error occurred|Traceback") {
+    # Check for errors in output - only fatal errors
+    if ($FetchExitCode -ne 0 -or $FetchOutput -match "\[ERROR\]|Error occurred:|Traceback \(most recent call last\)") {
         throw "Bloomberg data fetch failed - check logs for details"
     }
     Write-Log "Bloomberg data fetch completed successfully"
@@ -80,8 +80,8 @@ try {
         if ($_.Trim()) { Write-Log $_ }
     }
     
-    # Check for errors in output
-    if ($UploadExitCode -ne 0 -or $UploadOutput -match "ERROR|Error occurred|Traceback") {
+    # Check for errors in output - only fatal errors
+    if ($UploadExitCode -ne 0 -or $UploadOutput -match "\[ERROR\]|Error occurred:|Traceback \(most recent call last\)") {
         throw "PostgreSQL upload failed - check logs for details"
     }
     Write-Log "PostgreSQL upload completed successfully"
@@ -99,8 +99,8 @@ try {
         if ($_.Trim()) { Write-Log $_ }
     }
     
-    # Check for errors
-    if ($SubIndexFetchExitCode -ne 0 -or $SubIndexFetchOutput -match "ERROR|Error occurred|Traceback") {
+    # Check for errors - only fatal errors, not individual ticker warnings
+    if ($SubIndexFetchExitCode -ne 0 -or $SubIndexFetchOutput -match "\[ERROR\]|Error occurred:|Traceback \(most recent call last\)") {
         throw "Sub-index prices fetch failed - check logs for details"
     }
     Write-Log "Sub-index prices fetch completed successfully"
@@ -114,8 +114,8 @@ try {
         if ($_.Trim()) { Write-Log $_ }
     }
     
-    # Check for errors
-    if ($SubIndexUploadExitCode -ne 0 -or $SubIndexUploadOutput -match "ERROR|Error occurred|Traceback") {
+    # Check for errors - only fatal errors
+    if ($SubIndexUploadExitCode -ne 0 -or $SubIndexUploadOutput -match "\[ERROR\]|Error occurred:|Traceback \(most recent call last\)") {
         throw "Sub-index prices upload failed - check logs for details"
     }
     Write-Log "Sub-index prices upload completed successfully"
